@@ -50,7 +50,11 @@ enum WorkBatchBindingReconciler {
             let otherSessionIDs = Set(runtimeOtherSessionIDs + processOtherSessionIDs).sorted()
             let hasDuplicateExactProcess = processExactCount > 1
             let hasDuplicateCockpit = !otherSessionIDs.isEmpty || hasDuplicateExactProcess
-            let hasExactSession = !exactSessions.isEmpty || processExactCount > 0
+            let exactCockpitActivity = exactCockpitActivity(
+                exactSessions: exactSessions,
+                processExactCount: processExactCount,
+            )
+            let hasExactSession = exactCockpitActivity != .absent
             let needsUser = batchNeedsUser(binding.batchID, in: updatedState)
 
             func recordDuplicateIssue() {
@@ -84,19 +88,28 @@ enum WorkBatchBindingReconciler {
             // record duplicate evidence so a click does not silently focus the
             // wrong cockpit.
             if batchHasNoOpenTasks(binding.batchID, in: updatedState), !needsUser {
-                if updatedBinding.status != .done {
-                    updatedBinding.status = .done
-                    updatedBinding.updatedAt = now
-                }
                 if hasDuplicateCockpit {
                     recordDuplicateIssue()
                 }
-                markDoneIfUseful(
-                    binding.batchID,
-                    in: &updatedState,
-                    liveCockpitIsReady: hasExactSession,
-                    now: now,
-                )
+
+                if exactCockpitActivity == .working, !hasDuplicateCockpit {
+                    if updatedBinding.status != .running {
+                        updatedBinding.status = .running
+                        updatedBinding.updatedAt = now
+                    }
+                    markActiveCockpitIfUseful(binding.batchID, in: &updatedState, now: now)
+                } else {
+                    if updatedBinding.status != .done {
+                        updatedBinding.status = .done
+                        updatedBinding.updatedAt = now
+                    }
+                    markDoneIfUseful(
+                        binding.batchID,
+                        in: &updatedState,
+                        liveAssignedCockpitIsPresent: exactCockpitActivity != .absent,
+                        now: now,
+                    )
+                }
                 updatedBindings.append(updatedBinding)
                 continue
             }
@@ -188,6 +201,38 @@ enum WorkBatchBindingReconciler {
             session.toolsInFlight == 0
     }
 
+    private enum ExactCockpitActivity {
+        case absent
+        case readyForInput
+        case working
+    }
+
+    private static func exactCockpitActivity(
+        exactSessions: [RuntimeSession],
+        processExactCount: Int,
+    ) -> ExactCockpitActivity {
+        if exactSessions.contains(where: sessionIsActivelyWorking) {
+            return .working
+        }
+        if !exactSessions.isEmpty || processExactCount > 0 {
+            return .readyForInput
+        }
+        return .absent
+    }
+
+    private static func sessionIsActivelyWorking(_ session: RuntimeSession) -> Bool {
+        if (session.toolsInFlight ?? 0) > 0 {
+            return true
+        }
+
+        switch session.state.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() {
+        case "working", "compacting", "waiting":
+            return true
+        default:
+            return false
+        }
+    }
+
     private static func duplicateIssueSessionIDs(
         bindingSessionID: String,
         otherSessionIDs: [String],
@@ -251,7 +296,27 @@ enum WorkBatchBindingReconciler {
             changed = true
         }
         if shouldReplaceSummaryAfterRecovery(state.batches[index].currentActivitySummary) {
-            state.batches[index].currentActivitySummary = "Claude Code is working in \(state.batches[index].name)."
+            state.batches[index].currentActivitySummary = runningSummary(for: tasks)
+            changed = true
+        }
+        if changed {
+            state.batches[index].updatedAt = now
+        }
+    }
+
+    private static func markActiveCockpitIfUseful(
+        _ batchID: String,
+        in state: inout WorkBatchStateSnapshot,
+        now: Date,
+    ) {
+        guard let index = state.batches.firstIndex(where: { $0.id == batchID }) else { return }
+        var changed = false
+        if state.batches[index].status != .working {
+            state.batches[index].status = .working
+            changed = true
+        }
+        if shouldReplaceSummaryForActiveCockpit(state.batches[index].currentActivitySummary) {
+            state.batches[index].currentActivitySummary = "Checking final result."
             changed = true
         }
         if changed {
@@ -270,11 +335,11 @@ enum WorkBatchBindingReconciler {
     private static func markDoneIfUseful(
         _ batchID: String,
         in state: inout WorkBatchStateSnapshot,
-        liveCockpitIsReady: Bool,
+        liveAssignedCockpitIsPresent: Bool,
         now: Date,
     ) {
         guard let index = state.batches.firstIndex(where: { $0.id == batchID }) else { return }
-        let targetStatus: WorkBatchStatus = liveCockpitIsReady ? .ready : .idle
+        let targetStatus: WorkBatchStatus = liveAssignedCockpitIsPresent ? .ready : .idle
         var changed = false
         // New Work Batch status rule: completed work with a live assigned cockpit stays Ready
         // so the user can see that Claude is still open and awaiting direction.
@@ -285,7 +350,9 @@ enum WorkBatchBindingReconciler {
         let summary = state.batches[index].currentActivitySummary
             .trimmingCharacters(in: .whitespacesAndNewlines)
         if shouldReplaceSummaryAfterCompletion(summary) {
-            state.batches[index].currentActivitySummary = "Done: all Tasks completed."
+            state.batches[index].currentActivitySummary = completionSummary(
+                for: state.tasks.filter { $0.batchID == batchID },
+            )
             changed = true
         }
         if changed {
@@ -336,6 +403,7 @@ enum WorkBatchBindingReconciler {
     private static func shouldReplaceSummaryAfterRecovery(_ summary: String) -> Bool {
         let normalized = summary.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         return normalized.isEmpty ||
+            normalized.contains("is working in") ||
             normalized.contains("needs reconnect") ||
             normalized.contains("needs attention") ||
             normalized.contains("multiple claude code sessions")
@@ -344,9 +412,61 @@ enum WorkBatchBindingReconciler {
     private static func shouldReplaceSummaryAfterCompletion(_ summary: String) -> Bool {
         let normalized = summary.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         return normalized.isEmpty ||
+            normalized == "done: all tasks completed." ||
+            normalized == "all tasks done." ||
+            normalized.contains("is working") ||
             normalized.contains("needs reconnect") ||
             normalized.contains("needs attention") ||
             normalized.contains("multiple claude code sessions")
+    }
+
+    private static func shouldReplaceSummaryForActiveCockpit(_ summary: String) -> Bool {
+        let normalized = summary.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        return normalized.isEmpty ||
+            normalized.hasPrefix("done:") ||
+            normalized.contains("is working in") ||
+            normalized.contains("needs reconnect") ||
+            normalized.contains("needs attention") ||
+            normalized.contains("multiple claude code sessions")
+    }
+
+    private static func runningSummary(for tasks: [WorkBatchTaskRecord]) -> String {
+        let activeTask = tasks.last { task in
+            task.status == .working || task.status == .queued
+        } ?? tasks.last { $0.status != .done }
+
+        guard let activeTask else {
+            return "Working on next step."
+        }
+        return "Working on \(activeTask.displayTitle)."
+    }
+
+    private static func completionSummary(for tasks: [WorkBatchTaskRecord]) -> String {
+        let completedTask = tasks
+            .filter { $0.status == .done }
+            .sorted {
+                if $0.updatedAt != $1.updatedAt {
+                    return $0.updatedAt > $1.updatedAt
+                }
+                return $0.createdAt > $1.createdAt
+            }
+            .first
+
+        guard let completedTask else {
+            return "Done."
+        }
+        return doneSummary(taskTitle: completedTask.displayTitle)
+    }
+
+    private static func doneSummary(taskTitle: String) -> String {
+        let title = taskTitle.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !title.isEmpty else { return "Done." }
+        if let last = title.last,
+           [".", "!", "?"].contains(last)
+        {
+            return "Done: \(title)"
+        }
+        return "Done: \(title)."
     }
 
     private static func markBatch(

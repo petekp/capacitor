@@ -98,6 +98,7 @@ final class WorkBatchAutoRouter {
     typealias PreviewRunner = (MacOSPreviewWorkRequest) async throws -> MacOSPreviewWorkProof
     typealias PreviewActivator = (WorkBatchPreviewRecord) -> Bool
     typealias PreviewRunningMatcher = (WorkBatchPreviewRecord) -> Bool
+    typealias PreviewSourceSnapshotLoader = (String) async -> MacOSPreviewSourceSnapshot
 
     private let classifier: Classifier
     private let stateStoreFactory: StateStoreFactory
@@ -109,6 +110,7 @@ final class WorkBatchAutoRouter {
     private let previewRunner: PreviewRunner
     private let previewActivator: PreviewActivator
     private let previewRunningMatcher: PreviewRunningMatcher
+    private let previewSourceSnapshotLoader: PreviewSourceSnapshotLoader
     private let previewProjector: WorkBatchPreviewProjector
     private var isRouting = false
     private var routeWaiters: [CheckedContinuation<Void, Never>] = []
@@ -126,6 +128,7 @@ final class WorkBatchAutoRouter {
         previewRunner: PreviewRunner? = nil,
         previewActivator: PreviewActivator? = nil,
         previewRunningMatcher: PreviewRunningMatcher? = nil,
+        previewSourceSnapshotLoader: PreviewSourceSnapshotLoader? = nil,
         previewProjector: WorkBatchPreviewProjector = WorkBatchPreviewProjector(),
     ) {
         let defaultClassifier = ClaudeWorkBatchClassifier()
@@ -160,6 +163,9 @@ final class WorkBatchAutoRouter {
         }
         self.previewRunningMatcher = previewRunningMatcher ?? { record in
             previewActivity.isMatchingRunning(record: record)
+        }
+        self.previewSourceSnapshotLoader = previewSourceSnapshotLoader ?? { worktreePath in
+            await MacOSPreviewSourceFingerprinter.snapshot(worktreeURL: URL(fileURLWithPath: worktreePath, isDirectory: true))
         }
         self.previewProjector = previewProjector
     }
@@ -445,9 +451,11 @@ final class WorkBatchAutoRouter {
             return record
         }
 
+        let currentSourceSnapshot = await previewSourceSnapshotLoader(binding.worktreePath)
         if let existingRecord = try previewStore.record(batchID: batchID),
            existingRecord.status == .readyToInspect,
            existingRecord.worktreePath.map(PathNormalizer.normalize) == PathNormalizer.normalize(binding.worktreePath),
+           existingRecord.sourceFingerprint == currentSourceSnapshot.fingerprint,
            previewRunningMatcher(existingRecord)
         {
             _ = previewActivator(existingRecord)
@@ -465,6 +473,7 @@ final class WorkBatchAutoRouter {
             binding: binding,
             request: request,
             updatedAt: now,
+            sourceFingerprint: currentSourceSnapshot.fingerprint,
         )
         try previewStore.upsert(building)
         onRecordChanged?(building)
@@ -487,6 +496,7 @@ final class WorkBatchAutoRouter {
                 buildLogPath: request.buildLogURL.path,
                 failureReason: "Preview build could not run: \(error.localizedDescription)",
                 updatedAt: now,
+                sourceFingerprint: currentSourceSnapshot.fingerprint,
             )
             try previewStore.upsert(failed)
             onRecordChanged?(failed)
@@ -796,7 +806,7 @@ final class WorkBatchAutoRouter {
             // already-completed Task should close the attention item, not imply
             // Claude Code has more work to continue.
             state.batches[batchIndex].status = .idle
-            state.batches[batchIndex].currentActivitySummary = "Done: all Tasks completed."
+            state.batches[batchIndex].currentActivitySummary = doneSummary(taskTitle: task.displayTitle)
             state.batches[batchIndex].updatedAt = now
             if bindings[bindingIndex].status != .done {
                 bindings[bindingIndex].status = .done
@@ -1240,6 +1250,17 @@ final class WorkBatchAutoRouter {
             return value
         }
         return "\(value)."
+    }
+
+    private func doneSummary(taskTitle: String) -> String {
+        let title = taskTitle.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !title.isEmpty else { return "Done." }
+        if let last = title.last,
+           [".", "!", "?"].contains(last)
+        {
+            return "Done: \(title)"
+        }
+        return "Done: \(title)."
     }
 
     private func workingSummary(claimSummary: String?, taskTitle: String) -> String {

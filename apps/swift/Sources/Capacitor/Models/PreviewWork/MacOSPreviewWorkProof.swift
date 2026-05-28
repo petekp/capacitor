@@ -1,4 +1,5 @@
 import AppKit
+import CryptoKit
 import Foundation
 
 enum MacOSPreviewWorkStatus: String, Codable, Equatable {
@@ -60,6 +61,7 @@ struct MacOSPreviewWorkProof: Codable, Equatable {
     let worktreePath: String
     let gitHead: String?
     let dirtyState: String
+    let sourceFingerprint: String?
     let buildCommand: String
     let buildLogPath: String
     let expectedBundleID: String
@@ -70,6 +72,12 @@ struct MacOSPreviewWorkProof: Codable, Equatable {
     var isReadyToInspect: Bool {
         status == .readyToInspect
     }
+}
+
+struct MacOSPreviewSourceSnapshot: Codable, Equatable {
+    let gitHead: String?
+    let dirtyState: String
+    let fingerprint: String
 }
 
 struct MacOSPreviewWorkRequest: Equatable {
@@ -153,6 +161,83 @@ struct MacOSPreviewWorkProofStore {
     }
 }
 
+enum MacOSPreviewSourceFingerprinter {
+    static func snapshot(
+        worktreeURL: URL,
+        commandRunner: MacOSPreviewShellCommandRunning = ProcessMacOSPreviewShellCommandRunner(),
+    ) async -> MacOSPreviewSourceSnapshot {
+        async let head = runGit(["rev-parse", "HEAD"], worktreeURL: worktreeURL, commandRunner: commandRunner)
+        async let wholeStatus = runGit(
+            ["status", "--porcelain=v1"],
+            worktreeURL: worktreeURL,
+            commandRunner: commandRunner,
+        )
+        async let status = runGit(
+            ["status", "--porcelain=v1", "--untracked-files=no", "--"] + previewRelevantPathspecs,
+            worktreeURL: worktreeURL,
+            commandRunner: commandRunner,
+        )
+        async let diff = runGit(
+            ["diff", "--binary", "--no-ext-diff", "HEAD", "--"] + previewRelevantPathspecs,
+            worktreeURL: worktreeURL,
+            commandRunner: commandRunner,
+        )
+
+        let resolvedHead = await head?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let resolvedWholeStatus = await wholeStatus
+        let resolvedStatus = await status
+        let resolvedDiff = await diff
+        let dirtyState: String = if let resolvedWholeStatus {
+            resolvedWholeStatus.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "clean" : "dirty"
+        } else {
+            "unknown"
+        }
+        let source = [
+            "head=\(resolvedHead?.isEmpty == false ? resolvedHead! : "<unknown>")",
+            "status=\(resolvedStatus ?? "<unknown>")",
+            "diff=\(resolvedDiff ?? "<unknown>")",
+        ].joined(separator: "\u{0}")
+
+        return MacOSPreviewSourceSnapshot(
+            gitHead: resolvedHead?.isEmpty == false ? resolvedHead : nil,
+            dirtyState: dirtyState,
+            fingerprint: sha256Hex(source),
+        )
+    }
+
+    private static let previewRelevantPathspecs = [
+        "Cargo.lock",
+        "Cargo.toml",
+        "apps/swift/Package.swift",
+        "apps/swift/Sources",
+        "core/capacitor-core/src",
+        "core/hud-hook/src",
+    ]
+
+    private static func runGit(
+        _ arguments: [String],
+        worktreeURL: URL,
+        commandRunner: MacOSPreviewShellCommandRunning,
+    ) async -> String? {
+        let command = MacOSPreviewShellCommand(
+            executableURL: URL(fileURLWithPath: "/usr/bin/git"),
+            arguments: arguments,
+            workingDirectoryURL: worktreeURL,
+            outputURL: nil,
+        )
+        guard let result = try? await commandRunner.run(command), result.succeeded else {
+            return nil
+        }
+        return result.output
+    }
+
+    private static func sha256Hex(_ value: String) -> String {
+        SHA256.hash(data: Data(value.utf8))
+            .map { String(format: "%02x", $0) }
+            .joined()
+    }
+}
+
 struct MacOSPreviewWorkCoordinator {
     var commandRunner: MacOSPreviewShellCommandRunning = ProcessMacOSPreviewShellCommandRunner()
     var bundleInspector: MacOSPreviewBundleInspecting = InfoPlistMacOSPreviewBundleInspector()
@@ -165,7 +250,10 @@ struct MacOSPreviewWorkCoordinator {
         let normalizedWorktreePath = normalizedPath(request.worktreeURL)
         let normalizedAppPath = normalizedPath(request.appURL)
         let buildCommand = Self.buildCommandString(for: request)
-        let gitSnapshot = await loadGitSnapshot(worktreeURL: request.worktreeURL)
+        let gitSnapshot = await MacOSPreviewSourceFingerprinter.snapshot(
+            worktreeURL: request.worktreeURL,
+            commandRunner: commandRunner,
+        )
         let store = MacOSPreviewWorkProofStore(proofURL: request.proofURL, fileManager: fileManager)
 
         let buildingProof = proof(
@@ -176,8 +264,9 @@ struct MacOSPreviewWorkCoordinator {
             pid: nil,
             launchTime: nil,
             worktreePath: normalizedWorktreePath,
-            gitHead: gitSnapshot.head,
+            gitHead: gitSnapshot.gitHead,
             dirtyState: gitSnapshot.dirtyState,
+            sourceFingerprint: gitSnapshot.fingerprint,
             buildCommand: buildCommand,
             buildLogPath: request.buildLogURL.path,
             expectedBundleID: request.expectedBundleID,
@@ -344,8 +433,9 @@ struct MacOSPreviewWorkCoordinator {
             pid: launched.pid,
             launchTime: launched.launchTime,
             worktreePath: normalizedWorktreePath,
-            gitHead: gitSnapshot.head,
+            gitHead: gitSnapshot.gitHead,
             dirtyState: gitSnapshot.dirtyState,
+            sourceFingerprint: gitSnapshot.fingerprint,
             buildCommand: buildCommand,
             buildLogPath: request.buildLogURL.path,
             expectedBundleID: request.expectedBundleID,
@@ -356,40 +446,9 @@ struct MacOSPreviewWorkCoordinator {
         return ready
     }
 
-    private func loadGitSnapshot(worktreeURL: URL) async -> GitSnapshot {
-        async let head = runGit(["rev-parse", "HEAD"], worktreeURL: worktreeURL)
-        async let status = runGit(["status", "--porcelain"], worktreeURL: worktreeURL)
-
-        let resolvedHead = await head?.trimmingCharacters(in: .whitespacesAndNewlines)
-        let resolvedStatus = await status
-        let dirtyState: String = if let resolvedStatus {
-            resolvedStatus.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "clean" : "dirty"
-        } else {
-            "unknown"
-        }
-
-        return GitSnapshot(
-            head: resolvedHead?.isEmpty == false ? resolvedHead : nil,
-            dirtyState: dirtyState,
-        )
-    }
-
-    private func runGit(_ arguments: [String], worktreeURL: URL) async -> String? {
-        let command = MacOSPreviewShellCommand(
-            executableURL: URL(fileURLWithPath: "/usr/bin/git"),
-            arguments: arguments,
-            workingDirectoryURL: worktreeURL,
-            outputURL: nil,
-        )
-        guard let result = try? await commandRunner.run(command), result.succeeded else {
-            return nil
-        }
-        return result.output
-    }
-
     private func failedProof(
         request: MacOSPreviewWorkRequest,
-        gitSnapshot: GitSnapshot,
+        gitSnapshot: MacOSPreviewSourceSnapshot,
         buildCommand: String,
         bundleID: String? = nil,
         displayName: String? = nil,
@@ -405,8 +464,9 @@ struct MacOSPreviewWorkCoordinator {
             pid: pid,
             launchTime: launchTime,
             worktreePath: normalizedPath(request.worktreeURL),
-            gitHead: gitSnapshot.head,
+            gitHead: gitSnapshot.gitHead,
             dirtyState: gitSnapshot.dirtyState,
+            sourceFingerprint: gitSnapshot.fingerprint,
             buildCommand: buildCommand,
             buildLogPath: request.buildLogURL.path,
             expectedBundleID: request.expectedBundleID,
@@ -417,7 +477,7 @@ struct MacOSPreviewWorkCoordinator {
 
     private func alreadyRunningPreviewProof(
         request: MacOSPreviewWorkRequest,
-        gitSnapshot: GitSnapshot,
+        gitSnapshot: MacOSPreviewSourceSnapshot,
         buildCommand: String,
         bundleID: String? = nil,
         displayName: String? = nil,
@@ -453,6 +513,7 @@ struct MacOSPreviewWorkCoordinator {
         worktreePath: String,
         gitHead: String?,
         dirtyState: String,
+        sourceFingerprint: String?,
         buildCommand: String,
         buildLogPath: String,
         expectedBundleID: String,
@@ -469,6 +530,7 @@ struct MacOSPreviewWorkCoordinator {
             worktreePath: worktreePath,
             gitHead: gitHead,
             dirtyState: dirtyState,
+            sourceFingerprint: sourceFingerprint,
             buildCommand: buildCommand,
             buildLogPath: buildLogPath,
             expectedBundleID: expectedBundleID,
@@ -480,11 +542,6 @@ struct MacOSPreviewWorkCoordinator {
 
     private func normalizedPath(_ url: URL) -> String {
         url.standardizedFileURL.resolvingSymlinksInPath().path
-    }
-
-    private struct GitSnapshot {
-        let head: String?
-        let dirtyState: String
     }
 
     static func buildCommand(for request: MacOSPreviewWorkRequest) -> MacOSPreviewShellCommand {

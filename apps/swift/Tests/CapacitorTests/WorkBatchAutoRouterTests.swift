@@ -2815,7 +2815,7 @@ final class WorkBatchAutoRouterTests: XCTestCase {
         XCTAssertEqual(updatedState.tasks.first?.status, .done)
         XCTAssertEqual(updatedState.checkpoints.first?.status, .answered)
         XCTAssertEqual(updatedState.batches.first?.status, .idle)
-        XCTAssertEqual(updatedState.batches.first?.currentActivitySummary, "Done: all Tasks completed.")
+        XCTAssertEqual(updatedState.batches.first?.currentActivitySummary, "Done: Adjust mobile spacing.")
         XCTAssertEqual(try harness.bindingStore.binding(batchID: "batch-mobile")?.status, .done)
 
         let mirror = try String(

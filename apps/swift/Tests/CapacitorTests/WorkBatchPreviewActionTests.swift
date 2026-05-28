@@ -46,6 +46,7 @@ final class WorkBatchPreviewActionTests: XCTestCase {
                     worktreePath: request.worktreeURL.path,
                     gitHead: "abc123",
                     dirtyState: "clean",
+                    sourceFingerprint: "fingerprint-current",
                     buildCommand: "build",
                     buildLogPath: request.buildLogURL.path,
                     expectedBundleID: request.expectedBundleID,
@@ -75,6 +76,7 @@ final class WorkBatchPreviewActionTests: XCTestCase {
         XCTAssertEqual(record.status, .readyToInspect)
         XCTAssertEqual(record.pid, 777)
         XCTAssertEqual(record.worktreePath, PathNormalizer.normalize(harness.worktreeRoot.path))
+        XCTAssertEqual(record.sourceFingerprint, "fingerprint-current")
         XCTAssertEqual(try harness.previewStore.record(batchID: "batch-mobile"), record)
         XCTAssertEqual(changedStatuses, [.previewBuilding, .readyToInspect])
     }
@@ -108,6 +110,56 @@ final class WorkBatchPreviewActionTests: XCTestCase {
         XCTAssertFalse(didRunPreview)
         XCTAssertEqual(activatedRecord, existingRecord)
         XCTAssertEqual(record, existingRecord)
+    }
+
+    func testOpenPreviewRebuildsWhenReadyPreviewSourceFingerprintIsStale() async throws {
+        let harness = try PreviewActionHarness()
+        try harness.seedBatch(withBinding: true)
+        try harness.makeCapacitorPreviewCapable(at: harness.worktreeRoot)
+        let staleRecord = harness.readyPreviewRecord(sourceFingerprint: "fingerprint-old")
+        try harness.previewStore.upsert(staleRecord)
+        var didRunPreview = false
+        var didActivate = false
+        let router = harness.router(
+            previewRunner: { request in
+                didRunPreview = true
+                return MacOSPreviewWorkProof(
+                    status: .readyToInspect,
+                    appPath: request.appURL.path,
+                    bundleID: request.expectedBundleID,
+                    displayName: request.expectedDisplayName,
+                    pid: 778,
+                    launchTime: harness.now,
+                    worktreePath: request.worktreeURL.path,
+                    gitHead: "abc123",
+                    dirtyState: "dirty",
+                    sourceFingerprint: "fingerprint-current",
+                    buildCommand: "build",
+                    buildLogPath: request.buildLogURL.path,
+                    expectedBundleID: request.expectedBundleID,
+                    expectedDisplayName: request.expectedDisplayName,
+                    failureReason: nil,
+                    recordedAt: harness.now,
+                )
+            },
+            previewActivator: { _ in
+                didActivate = true
+                return true
+            },
+            previewRunningMatcher: { _ in true },
+        )
+
+        let record = try await router.openPreview(
+            project: harness.project,
+            batchID: "batch-mobile",
+            now: harness.now,
+        )
+
+        XCTAssertTrue(didRunPreview)
+        XCTAssertFalse(didActivate)
+        XCTAssertEqual(record.status, .readyToInspect)
+        XCTAssertEqual(record.pid, 778)
+        XCTAssertEqual(record.sourceFingerprint, "fingerprint-current")
     }
 
     func testOpenPreviewDoesNotRebuildWhenMatchingReadyPreviewActivationFails() async throws {
@@ -153,6 +205,7 @@ final class WorkBatchPreviewActionTests: XCTestCase {
                     worktreePath: request.worktreeURL.path,
                     gitHead: "abc123",
                     dirtyState: "dirty",
+                    sourceFingerprint: "fingerprint-current",
                     buildCommand: "build",
                     buildLogPath: request.buildLogURL.path,
                     expectedBundleID: request.expectedBundleID,
@@ -234,6 +287,7 @@ private final class PreviewActionHarness {
         previewRunner: @escaping WorkBatchAutoRouter.PreviewRunner,
         previewActivator: WorkBatchAutoRouter.PreviewActivator? = nil,
         previewRunningMatcher: WorkBatchAutoRouter.PreviewRunningMatcher? = nil,
+        previewSourceSnapshotLoader: WorkBatchAutoRouter.PreviewSourceSnapshotLoader? = nil,
     ) -> WorkBatchAutoRouter {
         WorkBatchAutoRouter(
             stateStoreFactory: { _ in self.stateStore },
@@ -242,6 +296,13 @@ private final class PreviewActionHarness {
             previewRunner: previewRunner,
             previewActivator: previewActivator,
             previewRunningMatcher: previewRunningMatcher,
+            previewSourceSnapshotLoader: previewSourceSnapshotLoader ?? { _ in
+                MacOSPreviewSourceSnapshot(
+                    gitHead: "abc123",
+                    dirtyState: "dirty",
+                    fingerprint: "fingerprint-current",
+                )
+            },
             previewProjector: WorkBatchPreviewProjector(fileManager: fileManager),
         )
     }
@@ -307,7 +368,7 @@ private final class PreviewActionHarness {
         }
     }
 
-    func readyPreviewRecord() -> WorkBatchPreviewRecord {
+    func readyPreviewRecord(sourceFingerprint: String = "fingerprint-current") -> WorkBatchPreviewRecord {
         WorkBatchPreviewRecord(
             id: "batch-mobile",
             batchID: "batch-mobile",
@@ -322,6 +383,7 @@ private final class PreviewActionHarness {
             buildLogPath: previewStore.buildLogURL(batchID: "batch-mobile").path,
             failureReason: nil,
             updatedAt: now,
+            sourceFingerprint: sourceFingerprint,
         )
     }
 }
@@ -338,6 +400,7 @@ private extension WorkBatchPreviewRecord {
             worktreePath: worktreePath ?? projectPath,
             gitHead: "abc123",
             dirtyState: "clean",
+            sourceFingerprint: sourceFingerprint,
             buildCommand: "build",
             buildLogPath: buildLogPath ?? "/tmp/build.log",
             expectedBundleID: bundleID ?? "com.capacitor.app.preview",

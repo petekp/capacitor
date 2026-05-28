@@ -371,6 +371,7 @@ final class AppStateRuntimeSnapshotEffectTests: XCTestCase {
                 sessions: [
                     makeRuntimeSession(
                         sessionId: "session-batch",
+                        state: "ready",
                         cwd: worktreeURL.path,
                         projectPath: worktreeURL.path,
                     ),
@@ -387,6 +388,105 @@ final class AppStateRuntimeSnapshotEffectTests: XCTestCase {
         XCTAssertEqual(try stateStore.load().tasks[0].status, .done)
         XCTAssertEqual(try stateStore.load().batches[0].status, .ready)
         XCTAssertEqual(try bindingStore.binding(batchID: "batch-mobile")?.status, .done)
+    }
+
+    func testRuntimeSnapshotApplyKeepsCompletedWorkBatchWorkingWhileBoundSessionIsWorking() async throws {
+        let fileManager = FileManager.default
+        let tempDir = fileManager.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let projectRoot = tempDir.appendingPathComponent("project", isDirectory: true)
+        let worktreeURL = projectRoot.appendingPathComponent(".capacitor/worktrees/batch-mobile", isDirectory: true)
+        try fileManager.createDirectory(at: worktreeURL, withIntermediateDirectories: true)
+        addTeardownBlock {
+            try? fileManager.removeItem(at: tempDir)
+        }
+
+        let stateStore = WorkBatchStateStore(
+            fileURL: tempDir.appendingPathComponent("state.json"),
+            fileManager: fileManager,
+        )
+        let bindingStore = WorkBatchCockpitBindingStore(
+            fileURL: tempDir.appendingPathComponent("bindings.json"),
+            fileManager: fileManager,
+        )
+        let now = Date(timeIntervalSince1970: 1_775_000_000)
+        try stateStore.save(WorkBatchStateSnapshot(
+            version: 1,
+            batches: [
+                WorkBatchRecord(
+                    id: "batch-mobile",
+                    name: "Mobile prototype",
+                    projectPath: projectRoot.path,
+                    status: .ready,
+                    currentActivitySummary: "Done: Added green border.",
+                    taskIDs: ["task-green"],
+                    cockpitBindingID: "batch-mobile",
+                    createdAt: now,
+                    updatedAt: now,
+                ),
+            ],
+            tasks: [
+                WorkBatchTaskRecord(
+                    id: "task-green",
+                    sourceIdeaID: "task-green",
+                    title: "Add green border",
+                    body: "",
+                    status: .done,
+                    batchID: "batch-mobile",
+                    createdAt: now,
+                    updatedAt: now,
+                ),
+            ],
+            classifications: [],
+        ))
+        try bindingStore.upsert(WorkBatchCockpitBinding(
+            id: "batch-mobile",
+            batchID: "batch-mobile",
+            batchName: "Mobile prototype",
+            projectPath: projectRoot.path,
+            worktreeName: "batch-mobile",
+            worktreePath: worktreeURL.path,
+            host: .claudeCode,
+            claudeSessionID: "session-batch",
+            status: .done,
+            createdAt: now,
+            updatedAt: now,
+        ))
+
+        let router = WorkBatchAutoRouter(
+            classifier: { _ in throw NSError(domain: "test", code: 1) },
+            stateStoreFactory: { _ in stateStore },
+            bindingStoreFactory: { _ in bindingStore },
+        )
+        let appState = AppState(
+            runtimeClient: RuntimeClient(isEnabledOverride: false),
+            workBatchAutoRouter: router,
+        )
+        appState.cancelRuntimeAutomationForTesting()
+        appState.setRuntimeSnapshotGenerationForTesting(1)
+        let project = makeProject(path: projectRoot.path)
+
+        await appState.applyRuntimeSnapshotForTesting(
+            makeRuntimeSnapshot(
+                projectPath: projectRoot.path,
+                sessions: [
+                    makeRuntimeSession(
+                        sessionId: "session-batch",
+                        state: "working",
+                        cwd: worktreeURL.path,
+                        projectPath: worktreeURL.path,
+                    ),
+                ],
+                delegations: [],
+                runs: [],
+            ),
+            refreshGeneration: 1,
+            correlationId: "work-batch-completed-but-working",
+            projects: [project],
+        )
+
+        XCTAssertEqual(try stateStore.load().tasks[0].status, .done)
+        XCTAssertEqual(try stateStore.load().batches[0].status, .working)
+        XCTAssertEqual(try bindingStore.binding(batchID: "batch-mobile")?.status, .running)
     }
 
     func testRuntimeSnapshotApplyIngestsWorkBatchCheckpointRequestsAndShowsToast() async throws {
@@ -547,13 +647,14 @@ final class AppStateRuntimeSnapshotEffectTests: XCTestCase {
 
     private func makeRuntimeSession(
         sessionId: String,
+        state: String = "working",
         cwd: String,
         projectPath: String,
     ) -> RuntimeSession {
         RuntimeSession(
             sessionId: sessionId,
             pid: 1234,
-            state: "working",
+            state: state,
             cwd: cwd,
             projectId: nil,
             workspaceId: nil,

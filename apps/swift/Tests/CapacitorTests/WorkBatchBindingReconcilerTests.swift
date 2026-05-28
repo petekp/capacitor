@@ -20,7 +20,7 @@ final class WorkBatchBindingReconcilerTests: XCTestCase {
 
         XCTAssertEqual(result.bindings[0].status, .running)
         XCTAssertEqual(result.state.batches[0].status, .working)
-        XCTAssertEqual(result.state.batches[0].currentActivitySummary, "Claude Code is working in Mobile prototype.")
+        XCTAssertEqual(result.state.batches[0].currentActivitySummary, "Working on Add green border.")
         XCTAssertTrue(result.issues.isEmpty)
     }
 
@@ -61,7 +61,7 @@ final class WorkBatchBindingReconcilerTests: XCTestCase {
 
         XCTAssertEqual(result.bindings[0].status, .running)
         XCTAssertEqual(result.state.batches[0].status, .working)
-        XCTAssertEqual(result.state.batches[0].currentActivitySummary, "Claude Code is working in Mobile prototype.")
+        XCTAssertEqual(result.state.batches[0].currentActivitySummary, "Working on Add green border.")
         XCTAssertTrue(result.issues.isEmpty)
     }
 
@@ -85,14 +85,14 @@ final class WorkBatchBindingReconcilerTests: XCTestCase {
 
         XCTAssertEqual(result.bindings[0].status, .running)
         XCTAssertEqual(result.state.batches[0].status, .working)
-        XCTAssertEqual(result.state.batches[0].currentActivitySummary, "Claude Code is working in Mobile prototype.")
+        XCTAssertEqual(result.state.batches[0].currentActivitySummary, "Working on Add green border.")
         XCTAssertTrue(result.issues.isEmpty)
     }
 
     func testSignalAbsentRuntimeSessionWithToolInFlightIsNotLiveWithoutProcessProbe() {
         let now = Date(timeIntervalSince1970: 1_775_000_200)
         let result = WorkBatchBindingReconciler.reconcile(
-            state: state(status: .working, summary: "Claude Code is working in Mobile prototype."),
+            state: state(status: .working, summary: "Working on Add green border."),
             bindings: [binding(status: .running)],
             sessions: [
                 runtimeSession(
@@ -116,7 +116,7 @@ final class WorkBatchBindingReconcilerTests: XCTestCase {
     func testSignalAbsentWorkingRuntimeSessionIsNotLiveWithoutProcessProbe() {
         let now = Date(timeIntervalSince1970: 1_775_000_200)
         let result = WorkBatchBindingReconciler.reconcile(
-            state: state(status: .working, summary: "Claude Code is working in Mobile prototype."),
+            state: state(status: .working, summary: "Working on Add green border."),
             bindings: [binding(status: .running)],
             sessions: [
                 runtimeSession(
@@ -257,6 +257,7 @@ final class WorkBatchBindingReconcilerTests: XCTestCase {
             sessions: [
                 runtimeSession(
                     sessionId: "session-batch",
+                    state: "ready",
                     cwd: "/tmp/project/.capacitor/worktrees/batch-mobile",
                     isAlive: true,
                 ),
@@ -268,6 +269,59 @@ final class WorkBatchBindingReconcilerTests: XCTestCase {
         XCTAssertEqual(result.state.batches[0].currentActivitySummary, "Done: Added green border.")
         XCTAssertEqual(result.state.tasks[0].status, .done)
         XCTAssertEqual(result.bindings, [inputBinding])
+        XCTAssertTrue(result.issues.isEmpty)
+    }
+
+    func testDoneBindingShowsWorkingWhenAssignedCockpitIsStillWorking() {
+        let now = Date(timeIntervalSince1970: 1_775_000_200)
+        var inputState = state(status: .ready, summary: "Done: Added green border.")
+        inputState.tasks[0].status = .done
+
+        let result = WorkBatchBindingReconciler.reconcile(
+            state: inputState,
+            bindings: [binding(status: .done)],
+            sessions: [
+                runtimeSession(
+                    sessionId: "session-batch",
+                    state: "working",
+                    cwd: "/tmp/project/.capacitor/worktrees/batch-mobile",
+                    isAlive: true,
+                ),
+            ],
+            now: now,
+        )
+
+        XCTAssertEqual(result.bindings[0].status, .running)
+        XCTAssertEqual(result.state.batches[0].status, .working)
+        XCTAssertEqual(result.state.batches[0].currentActivitySummary, "Checking final result.")
+        XCTAssertEqual(result.state.tasks[0].status, .done)
+        XCTAssertTrue(result.issues.isEmpty)
+    }
+
+    func testDoneBindingShowsWorkingWhenAssignedCockpitHasToolInFlight() {
+        let now = Date(timeIntervalSince1970: 1_775_000_200)
+        var inputState = state(status: .ready, summary: "Done: Added green border.")
+        inputState.tasks[0].status = .done
+
+        let result = WorkBatchBindingReconciler.reconcile(
+            state: inputState,
+            bindings: [binding(status: .done)],
+            sessions: [
+                runtimeSession(
+                    sessionId: "session-batch",
+                    state: "ready",
+                    cwd: "/tmp/project/.capacitor/worktrees/batch-mobile",
+                    toolsInFlight: 1,
+                    isAlive: true,
+                ),
+            ],
+            now: now,
+        )
+
+        XCTAssertEqual(result.bindings[0].status, .running)
+        XCTAssertEqual(result.state.batches[0].status, .working)
+        XCTAssertEqual(result.state.batches[0].currentActivitySummary, "Checking final result.")
+        XCTAssertEqual(result.state.tasks[0].status, .done)
         XCTAssertTrue(result.issues.isEmpty)
     }
 
@@ -283,11 +337,13 @@ final class WorkBatchBindingReconcilerTests: XCTestCase {
             sessions: [
                 runtimeSession(
                     sessionId: "session-batch",
+                    state: "ready",
                     cwd: "/tmp/project/.capacitor/worktrees/batch-mobile",
                     isAlive: true,
                 ),
                 runtimeSession(
                     sessionId: "manual-duplicate",
+                    state: "ready",
                     cwd: "/tmp/project/.capacitor/worktrees/batch-mobile/src",
                     isAlive: true,
                 ),
@@ -297,12 +353,44 @@ final class WorkBatchBindingReconcilerTests: XCTestCase {
 
         XCTAssertEqual(result.bindings[0].status, .done)
         XCTAssertEqual(result.state.batches[0].status, .ready)
-        XCTAssertEqual(result.state.batches[0].currentActivitySummary, "Done: all Tasks completed.")
+        XCTAssertEqual(result.state.batches[0].currentActivitySummary, "Done: Add green border.")
         XCTAssertEqual(result.issues.map(\.kind), [.duplicateCockpit])
         XCTAssertEqual(
             result.issues[0].sessionIDs,
             ["manual-duplicate", "session-batch"],
         )
+    }
+
+    func testDoneBatchWithWorkingAssignedCockpitAndDuplicateStaysReady() {
+        let now = Date(timeIntervalSince1970: 1_775_000_200)
+        var inputState = state(status: .ready, summary: "Done: Add green border.")
+        inputState.tasks[0].status = .done
+
+        let result = WorkBatchBindingReconciler.reconcile(
+            state: inputState,
+            bindings: [binding(status: .done)],
+            sessions: [
+                runtimeSession(
+                    sessionId: "session-batch",
+                    state: "working",
+                    cwd: "/tmp/project/.capacitor/worktrees/batch-mobile",
+                    isAlive: true,
+                ),
+                runtimeSession(
+                    sessionId: "manual-duplicate",
+                    state: "ready",
+                    cwd: "/tmp/project/.capacitor/worktrees/batch-mobile/src",
+                    isAlive: true,
+                ),
+            ],
+            now: now,
+        )
+
+        XCTAssertEqual(result.bindings[0].status, .done)
+        XCTAssertEqual(result.state.batches[0].status, .ready)
+        XCTAssertEqual(result.state.batches[0].currentActivitySummary, "Done: Add green border.")
+        XCTAssertEqual(result.state.tasks[0].status, .done)
+        XCTAssertEqual(result.issues.map(\.kind), [.duplicateCockpit])
     }
 
     func testPendingCheckpointPreventsAllDoneCleanupEvenWhenTaskWasMarkedDone() {

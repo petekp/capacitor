@@ -36,6 +36,7 @@ struct WorkBatchPreviewRecord: Codable, Equatable, Identifiable {
     let buildLogPath: String?
     let failureReason: String?
     let updatedAt: Date
+    let sourceFingerprint: String?
 
     enum CodingKeys: String, CodingKey {
         case id
@@ -51,6 +52,7 @@ struct WorkBatchPreviewRecord: Codable, Equatable, Identifiable {
         case buildLogPath = "build_log_path"
         case failureReason = "failure_reason"
         case updatedAt = "updated_at"
+        case sourceFingerprint = "source_fingerprint"
     }
 
     static func building(
@@ -59,6 +61,7 @@ struct WorkBatchPreviewRecord: Codable, Equatable, Identifiable {
         binding: WorkBatchCockpitBinding,
         request: MacOSPreviewWorkRequest,
         updatedAt: Date,
+        sourceFingerprint: String? = nil,
     ) -> WorkBatchPreviewRecord {
         WorkBatchPreviewRecord(
             id: batchID,
@@ -74,6 +77,7 @@ struct WorkBatchPreviewRecord: Codable, Equatable, Identifiable {
             buildLogPath: request.buildLogURL.path,
             failureReason: nil,
             updatedAt: updatedAt,
+            sourceFingerprint: sourceFingerprint,
         )
     }
 
@@ -98,6 +102,7 @@ struct WorkBatchPreviewRecord: Codable, Equatable, Identifiable {
             buildLogPath: nil,
             failureReason: reason,
             updatedAt: updatedAt,
+            sourceFingerprint: nil,
         )
     }
 
@@ -122,6 +127,7 @@ struct WorkBatchPreviewRecord: Codable, Equatable, Identifiable {
             buildLogPath: proof.buildLogPath,
             failureReason: proof.failureReason,
             updatedAt: updatedAt,
+            sourceFingerprint: proof.sourceFingerprint,
         )
     }
 }

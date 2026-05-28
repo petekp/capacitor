@@ -8,6 +8,12 @@ PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 # shellcheck source=/dev/null
 source "$SCRIPT_DIR/load-runtime-env.sh"
 
+if [[ -n "${HOME:-}" ]]; then
+    export PATH="$HOME/.cargo/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin:${PATH:-}"
+else
+    export PATH="/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin:${PATH:-}"
+fi
+
 runtime_service_dir() {
     printf '%s\n' "${CAPACITOR_RUNTIME_DIR:-$HOME/.capacitor/runtime}"
 }

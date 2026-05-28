@@ -672,9 +672,20 @@ enum WorkBatchProjectionBuilder {
             {
                 return "Queued \(queuedTask.displayTitle)."
             }
+
+            if workingTasks.isEmpty,
+               queuedTasks.isEmpty,
+               !tasks.isEmpty,
+               tasks.allSatisfy({ $0.status == .done })
+            {
+                return "Checking final result."
+            }
         }
 
         let summary = batch.currentActivitySummary.trimmingCharacters(in: .whitespacesAndNewlines)
+        if isGenericDoneSummary(summary) {
+            return completionSummary(for: tasks)
+        }
         guard summary.contains("..."),
               let task = tasks.last
         else {
@@ -692,5 +703,42 @@ enum WorkBatchProjectionBuilder {
             return "Added \(taskTitle)."
         }
         return taskTitle
+    }
+
+    private static func isGenericDoneSummary(_ summary: String) -> Bool {
+        switch summary.lowercased() {
+        case "done: all tasks completed.", "all tasks done.":
+            true
+        default:
+            false
+        }
+    }
+
+    private static func completionSummary(for tasks: [WorkBatchTaskRecord]) -> String {
+        let completedTask = tasks
+            .filter { $0.status == .done }
+            .sorted {
+                if $0.updatedAt != $1.updatedAt {
+                    return $0.updatedAt > $1.updatedAt
+                }
+                return $0.createdAt > $1.createdAt
+            }
+            .first
+
+        guard let completedTask else {
+            return "Done."
+        }
+        return doneSummary(taskTitle: completedTask.displayTitle)
+    }
+
+    private static func doneSummary(taskTitle: String) -> String {
+        let title = taskTitle.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !title.isEmpty else { return "Done." }
+        if let last = title.last,
+           [".", "!", "?"].contains(last)
+        {
+            return "Done: \(title)"
+        }
+        return "Done: \(title)."
     }
 }

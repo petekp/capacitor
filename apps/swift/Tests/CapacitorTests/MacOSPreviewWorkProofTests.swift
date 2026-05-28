@@ -72,7 +72,10 @@
                     if command.arguments == ["rev-parse", "HEAD"] {
                         return MacOSPreviewShellCommandResult(exitCode: 0, output: "abc123\n")
                     }
-                    if command.arguments == ["status", "--porcelain"] {
+                    if command.arguments.first == "status" {
+                        return MacOSPreviewShellCommandResult(exitCode: 0, output: "")
+                    }
+                    if command.arguments.first == "diff" {
                         return MacOSPreviewShellCommandResult(exitCode: 0, output: "")
                     }
                 }
@@ -113,6 +116,7 @@
             XCTAssertEqual(proof.launchTime, launchTime)
             XCTAssertEqual(proof.gitHead, "abc123")
             XCTAssertEqual(proof.dirtyState, "clean")
+            XCTAssertNotNil(proof.sourceFingerprint)
             XCTAssertNil(proof.failureReason)
 
             let data = try Data(contentsOf: request.proofURL)

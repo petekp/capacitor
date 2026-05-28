@@ -46,4 +46,17 @@ final class RestartAppScriptTests: XCTestCase {
         XCTAssertTrue(script.contains("CapacitorPreview.app/Contents/MacOS/Capacitor"))
         XCTAssertTrue(script.contains("Capacitor Preview is allowed"))
     }
+
+    func testRestartScriptAddsCargoBinToPathForAgentLaunchedRebuilds() throws {
+        let repoRoot = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+        let scriptURL = repoRoot.appendingPathComponent("scripts/dev/restart-app.sh")
+        let script = try String(contentsOf: scriptURL, encoding: .utf8)
+
+        XCTAssertTrue(script.contains("export PATH=\"$HOME/.cargo/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin:${PATH:-}\""))
+    }
 }

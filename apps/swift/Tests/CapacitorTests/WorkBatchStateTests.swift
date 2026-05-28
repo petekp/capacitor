@@ -364,6 +364,80 @@ final class WorkBatchStateTests: XCTestCase {
         XCTAssertEqual(projection.currentActivitySummary, "Working on Adjust mobile spacing. 1 queued.")
     }
 
+    func testProjectionSummaryAvoidsSelfReferentialWorkingFallbackAfterTasksAreDone() {
+        let now = Date(timeIntervalSince1970: 100)
+        let state = WorkBatchStateSnapshot(
+            version: 1,
+            batches: [
+                WorkBatchRecord(
+                    id: "batch-mobile",
+                    name: "some kind of menu bar has become visible at the",
+                    projectPath: "/tmp/project",
+                    status: .working,
+                    currentActivitySummary: "Claude Code is working in some kind of menu bar has become visible at the.",
+                    taskIDs: ["task-menu"],
+                    cockpitBindingID: nil,
+                    createdAt: now,
+                    updatedAt: now,
+                ),
+            ],
+            tasks: [
+                WorkBatchTaskRecord(
+                    id: "task-menu",
+                    sourceIdeaID: "task-menu",
+                    title: "Fix the stray menu bar artifact",
+                    body: "",
+                    status: .done,
+                    batchID: "batch-mobile",
+                    createdAt: now,
+                    updatedAt: now,
+                ),
+            ],
+            classifications: [],
+        )
+
+        let projection = WorkBatchProjectionBuilder.build(state: state, bindings: [])[0]
+
+        XCTAssertEqual(projection.currentActivitySummary, "Checking final result.")
+    }
+
+    func testProjectionSummaryCleansLegacyGenericDoneSummary() {
+        let now = Date(timeIntervalSince1970: 100)
+        let state = WorkBatchStateSnapshot(
+            version: 1,
+            batches: [
+                WorkBatchRecord(
+                    id: "batch-mobile",
+                    name: "Mobile Prototype Polish",
+                    projectPath: "/tmp/project",
+                    status: .idle,
+                    currentActivitySummary: "Done: all Tasks completed.",
+                    taskIDs: ["task-green"],
+                    cockpitBindingID: nil,
+                    createdAt: now,
+                    updatedAt: now,
+                ),
+            ],
+            tasks: [
+                WorkBatchTaskRecord(
+                    id: "task-green",
+                    sourceIdeaID: "task-green",
+                    title: "Add green border",
+                    body: "",
+                    status: .done,
+                    batchID: "batch-mobile",
+                    createdAt: now,
+                    updatedAt: now,
+                ),
+            ],
+            classifications: [],
+        )
+
+        let projection = WorkBatchProjectionBuilder.build(state: state, bindings: [])[0]
+
+        XCTAssertEqual(projection.currentActivitySummary, "Done: Add green border.")
+    }
+
     func testProjectionCarriesPendingCheckpoints() {
         let now = Date(timeIntervalSince1970: 100)
         let state = WorkBatchStateSnapshot(

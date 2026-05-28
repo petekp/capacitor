@@ -45,6 +45,7 @@ final class WorkBatchPreviewStateTests: XCTestCase {
             worktreePath: harness.worktreeRoot.path,
             gitHead: "abc123",
             dirtyState: "clean",
+            sourceFingerprint: "fingerprint-current",
             buildCommand: "build",
             buildLogPath: harness.tempDir.appendingPathComponent("build.log").path,
             expectedBundleID: "com.capacitor.app.preview",
@@ -356,6 +357,7 @@ final class WorkBatchPreviewStateTests: XCTestCase {
             buildLogPath: "/tmp/build.log",
             failureReason: failureReason,
             updatedAt: updatedAt,
+            sourceFingerprint: "fingerprint-current",
         )
     }
 }
