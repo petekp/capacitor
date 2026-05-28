@@ -1540,6 +1540,163 @@ final class WorkBatchAutoRouterTests: XCTestCase {
         XCTAssertTrue(scripts[0].contains("assigned-session-retry"))
     }
 
+    func testIngestTaskRequestAddsQueuedTaskToBoundBatchAndRewritesMirror() throws {
+        let harness = try RouterHarness()
+        let requestedAt = harness.now.addingTimeInterval(30)
+        try harness.seedMobileBatch(
+            status: .ready,
+            bindingStatus: .running,
+            taskStatus: .done,
+        )
+        _ = try WorkBatchTaskRequestStore(
+            worktreePath: harness.mobileWorktreePath,
+            fileManager: harness.fileManager,
+        ).write(WorkBatchTaskRequest(
+            taskID: "Task/Empty State Copy",
+            title: "Fix empty state copy",
+            body: "The user asked for clearer copy in the empty state.",
+            source: "manual_user_instruction",
+            requestedAt: requestedAt,
+        ))
+        let router = WorkBatchAutoRouter(
+            classifier: { _ in throw NSError(domain: "test", code: 1) },
+            stateStoreFactory: { _ in harness.stateStore },
+            bindingStoreFactory: { _ in harness.bindingStore },
+        )
+
+        let results = router.ingestTaskRequests(projects: [harness.project], now: requestedAt)
+
+        XCTAssertEqual(results.map(\.taskID), ["task-empty-state-copy"])
+        XCTAssertEqual(results.first?.taskTitle, "Fix empty state copy")
+
+        let state = try harness.stateStore.load()
+        let task = try XCTUnwrap(state.tasks.first { $0.id == "task-empty-state-copy" })
+        XCTAssertNil(task.sourceIdeaID)
+        XCTAssertEqual(task.status, .queued)
+        XCTAssertEqual(task.batchID, "batch-mobile")
+        XCTAssertEqual(task.createdAt, requestedAt)
+        XCTAssertEqual(task.updatedAt, requestedAt)
+        XCTAssertEqual(task.title, "Fix empty state copy")
+        XCTAssertEqual(task.body, "The user asked for clearer copy in the empty state.")
+
+        let batch = try XCTUnwrap(state.batches.first { $0.id == "batch-mobile" })
+        XCTAssertEqual(batch.status, .working)
+        XCTAssertEqual(batch.taskIDs, ["idea-old", "task-empty-state-copy"])
+        XCTAssertEqual(batch.currentActivitySummary, "Queued Fix empty state copy.")
+
+        let classification = try XCTUnwrap(state.classifications.last)
+        XCTAssertEqual(classification.taskID, "task-empty-state-copy")
+        XCTAssertEqual(classification.targetKind, .existing)
+        XCTAssertEqual(classification.batchID, "batch-mobile")
+        XCTAssertEqual(classification.confidence, 1)
+        XCTAssertTrue(classification.rationale.contains("Task request artifact"))
+
+        let deliveryRecord = try XCTUnwrap(state.deliveryRecord(batchID: "batch-mobile"))
+        XCTAssertNotNil(deliveryRecord.lastContextWrittenAt)
+        XCTAssertNotNil(deliveryRecord.lastDeliveryGeneration)
+        XCTAssertNotNil(deliveryRecord.lastActionableContextDigest)
+
+        let mirrorURL = URL(fileURLWithPath: harness.mobileWorktreePath, isDirectory: true)
+            .appendingPathComponent(WorkBatchContextMirror.relativePath)
+        let mirror = try String(contentsOf: mirrorURL, encoding: .utf8)
+        XCTAssertTrue(mirror.contains(".capacitor/work-batch-task-requests/<task-id>.json"))
+        XCTAssertTrue(mirror.contains("- [queued] Fix empty state copy (`task-empty-state-copy`)"))
+        XCTAssertTrue(mirror.contains("The user asked for clearer copy in the empty state."))
+    }
+
+    func testIngestTaskRequestIsIdempotentByTaskID() throws {
+        let harness = try RouterHarness()
+        try harness.seedMobileBatch(
+            status: .ready,
+            bindingStatus: .running,
+            taskStatus: .done,
+        )
+        _ = try WorkBatchTaskRequestStore(
+            worktreePath: harness.mobileWorktreePath,
+            fileManager: harness.fileManager,
+        ).write(WorkBatchTaskRequest(
+            taskID: "task-empty-state-copy",
+            title: "Fix empty state copy",
+            body: "The user asked for clearer copy in the empty state.",
+            source: "manual_user_instruction",
+            requestedAt: harness.now.addingTimeInterval(30),
+        ))
+        let router = WorkBatchAutoRouter(
+            classifier: { _ in throw NSError(domain: "test", code: 1) },
+            stateStoreFactory: { _ in harness.stateStore },
+            bindingStoreFactory: { _ in harness.bindingStore },
+        )
+
+        XCTAssertEqual(router.ingestTaskRequests(projects: [harness.project], now: harness.now).count, 1)
+        XCTAssertTrue(router.ingestTaskRequests(projects: [harness.project], now: harness.now).isEmpty)
+
+        let state = try harness.stateStore.load()
+        XCTAssertEqual(state.tasks.count(where: { $0.id == "task-empty-state-copy" }), 1)
+        XCTAssertEqual(state.batches.first?.taskIDs.count(where: { $0 == "task-empty-state-copy" }), 1)
+    }
+
+    func testIngestTaskRequestIgnoresBlankRequests() throws {
+        let harness = try RouterHarness()
+        try harness.seedMobileBatch(
+            status: .ready,
+            bindingStatus: .running,
+            taskStatus: .done,
+        )
+        _ = try WorkBatchTaskRequestStore(
+            worktreePath: harness.mobileWorktreePath,
+            fileManager: harness.fileManager,
+        ).write(WorkBatchTaskRequest(
+            taskID: "task-blank",
+            title: " ",
+            body: "\n",
+            source: "manual_user_instruction",
+            requestedAt: harness.now.addingTimeInterval(30),
+        ))
+        let router = WorkBatchAutoRouter(
+            classifier: { _ in throw NSError(domain: "test", code: 1) },
+            stateStoreFactory: { _ in harness.stateStore },
+            bindingStoreFactory: { _ in harness.bindingStore },
+        )
+
+        XCTAssertTrue(router.ingestTaskRequests(projects: [harness.project], now: harness.now).isEmpty)
+        let state = try harness.stateStore.load()
+        XCTAssertNil(state.tasks.first { $0.id == "task-blank" })
+        XCTAssertEqual(state.batches.first?.taskIDs, ["idea-old"])
+    }
+
+    func testIngestTaskRequestCapsFutureAgentTimestampAtIngestTime() throws {
+        let harness = try RouterHarness()
+        let ingestTime = harness.now.addingTimeInterval(60)
+        try harness.seedMobileBatch(
+            status: .ready,
+            bindingStatus: .running,
+            taskStatus: .done,
+        )
+        _ = try WorkBatchTaskRequestStore(
+            worktreePath: harness.mobileWorktreePath,
+            fileManager: harness.fileManager,
+        ).write(WorkBatchTaskRequest(
+            taskID: "task-future-clock",
+            title: "Handle future clock",
+            body: "The agent clock wrote a future timestamp.",
+            source: "manual_user_instruction",
+            requestedAt: ingestTime.addingTimeInterval(3600),
+        ))
+        let router = WorkBatchAutoRouter(
+            classifier: { _ in throw NSError(domain: "test", code: 1) },
+            stateStoreFactory: { _ in harness.stateStore },
+            bindingStoreFactory: { _ in harness.bindingStore },
+        )
+
+        _ = router.ingestTaskRequests(projects: [harness.project], now: ingestTime)
+
+        let state = try harness.stateStore.load()
+        let task = try XCTUnwrap(state.tasks.first { $0.id == "task-future-clock" })
+        XCTAssertEqual(task.createdAt, ingestTime)
+        XCTAssertEqual(task.updatedAt, ingestTime)
+        XCTAssertEqual(state.batches.first?.updatedAt, ingestTime)
+    }
+
     func testIngestTaskClaimMarksQueuedTaskWorking() throws {
         let harness = try RouterHarness()
         let claimTime = harness.now.addingTimeInterval(20)

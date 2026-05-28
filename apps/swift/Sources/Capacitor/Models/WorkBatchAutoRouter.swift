@@ -40,6 +40,15 @@ struct WorkBatchTaskClaimIngestResult: Equatable {
     let claim: WorkBatchTaskClaim
 }
 
+struct WorkBatchTaskRequestIngestResult: Equatable {
+    let projectPath: String
+    let batchID: String
+    let batchName: String
+    let taskID: String
+    let taskTitle: String
+    let request: WorkBatchTaskRequest
+}
+
 struct WorkBatchContextMirrorWriteResult: Equatable {
     let updatedAt: Date
     let deliveryGeneration: String
@@ -591,6 +600,24 @@ final class WorkBatchAutoRouter {
     }
 
     @discardableResult
+    func ingestTaskRequests(
+        projects: [Project],
+        now: Date = Date(),
+    ) -> [WorkBatchTaskRequestIngestResult] {
+        var results: [WorkBatchTaskRequestIngestResult] = []
+        for project in projects {
+            do {
+                try results.append(contentsOf: ingestTaskRequests(project: project, now: now))
+            } catch {
+                DebugLog.write(
+                    "WorkBatchAutoRouter.ingestTaskRequests failure project=\(project.path) error=\(error.localizedDescription)",
+                )
+            }
+        }
+        return results
+    }
+
+    @discardableResult
     func ingestTaskClaims(
         projects: [Project],
         now: Date = Date(),
@@ -915,6 +942,128 @@ final class WorkBatchAutoRouter {
             }
         }
         return issues
+    }
+
+    private func ingestTaskRequests(
+        project: Project,
+        now: Date,
+    ) throws -> [WorkBatchTaskRequestIngestResult] {
+        let stateStore = stateStoreFactory(project.path)
+        let bindingStore = bindingStoreFactory(project.path)
+        var state = try stateStore.load()
+        var bindings = try bindingStore.load()
+        guard !bindings.isEmpty else { return [] }
+
+        let originalState = state
+        let originalBindings = bindings
+        var results: [WorkBatchTaskRequestIngestResult] = []
+        var batchesNeedingMirrorRewrite: Set<String> = []
+
+        for bindingIndex in bindings.indices {
+            let binding = bindings[bindingIndex]
+            let requestStore = WorkBatchTaskRequestStore(worktreePath: binding.worktreePath)
+            let requests = try requestStore.loadRequests()
+                .sorted { lhs, rhs in
+                    lhs.url.lastPathComponent.localizedStandardCompare(rhs.url.lastPathComponent) == .orderedAscending
+                }
+
+            for loadedRequest in requests {
+                let request = loadedRequest.request
+                let taskID = loadedRequest.canonicalTaskID
+                guard !state.tasks.contains(where: { $0.id == taskID }) else {
+                    continue
+                }
+                guard let batchIndex = state.batches.firstIndex(where: { $0.id == binding.batchID }) else {
+                    continue
+                }
+
+                let requestTime = min(request.requestedAt ?? now, now)
+                let stateUpdateTime = max(requestTime, state.batches[batchIndex].updatedAt)
+                let title = taskRequestTitle(request)
+                let body = taskRequestBody(request, fallbackTitle: title)
+                let task = WorkBatchTaskRecord(
+                    id: taskID,
+                    sourceIdeaID: nil,
+                    title: title,
+                    body: body,
+                    status: .queued,
+                    batchID: binding.batchID,
+                    createdAt: requestTime,
+                    updatedAt: requestTime,
+                )
+
+                state.tasks.append(task)
+                if !state.batches[batchIndex].taskIDs.contains(taskID) {
+                    state.batches[batchIndex].taskIDs.append(taskID)
+                }
+                state.batches[batchIndex].status = statusAfterQueuedTaskRequest(binding: binding)
+                state.batches[batchIndex].currentActivitySummary = "Queued \(task.displayTitle)."
+                state.batches[batchIndex].updatedAt = stateUpdateTime
+                state.classifications.append(WorkBatchClassificationRecord.existing(
+                    taskID: taskID,
+                    batchID: binding.batchID,
+                    confidence: 1,
+                    rationale: "Added from Work Batch in-session Task request artifact \(loadedRequest.url.lastPathComponent).",
+                    summary: "Added to \(state.batches[batchIndex].name).",
+                    createdAt: stateUpdateTime,
+                ))
+
+                if bindings[bindingIndex].status == .done || bindings[bindingIndex].status == .stale {
+                    bindings[bindingIndex].status = .waiting
+                    bindings[bindingIndex].updatedAt = stateUpdateTime
+                }
+
+                batchesNeedingMirrorRewrite.insert(binding.batchID)
+                results.append(WorkBatchTaskRequestIngestResult(
+                    projectPath: project.path,
+                    batchID: binding.batchID,
+                    batchName: state.batches[batchIndex].name,
+                    taskID: task.id,
+                    taskTitle: task.displayTitle,
+                    request: request,
+                ))
+            }
+        }
+
+        if state != originalState {
+            try stateStore.save(state)
+        }
+        if bindings != originalBindings {
+            try bindingStore.save(bindings)
+        }
+
+        for batchID in batchesNeedingMirrorRewrite {
+            guard let batch = state.batches.first(where: { $0.id == batchID }),
+                  let binding = bindings.first(where: { $0.batchID == batchID })
+            else {
+                continue
+            }
+            do {
+                let mirrorResult = try writeContextMirror(
+                    batch: batch,
+                    projectPath: project.path,
+                    worktreePath: binding.worktreePath,
+                    tasks: state.tasks.filter { $0.batchID == batchID }.map(\.taskItem),
+                    checkpoints: state.checkpoints.filter { $0.batchID == batchID },
+                    now: now,
+                )
+                state.recordContextWrite(
+                    batchID: batchID,
+                    updatedAt: mirrorResult.updatedAt,
+                    deliveryGeneration: mirrorResult.deliveryGeneration,
+                    actionableContextDigest: mirrorResult.actionableContextDigest,
+                )
+            } catch {
+                DebugLog.write(
+                    "WorkBatchAutoRouter.ingestTaskRequests mirror failure project=\(project.path) batch=\(batchID) error=\(error.localizedDescription)",
+                )
+            }
+        }
+        if state != originalState {
+            try stateStore.save(state)
+        }
+
+        return results
     }
 
     private func ingestCompletionReports(
@@ -1247,6 +1396,36 @@ final class WorkBatchAutoRouter {
         case .stale, .waiting, .done:
             return .waiting
         }
+    }
+
+    private func statusAfterQueuedTaskRequest(binding: WorkBatchCockpitBinding) -> WorkBatchStatus {
+        switch binding.status {
+        case .launching, .running:
+            .working
+        case .stale, .waiting, .done:
+            .waiting
+        }
+    }
+
+    private func taskRequestTitle(_ request: WorkBatchTaskRequest) -> String {
+        let title = request.normalizedTitle
+        if !title.isEmpty {
+            return String(title.prefix(80))
+        }
+        let body = request.normalizedBody
+        guard !body.isEmpty else { return "Untitled Task" }
+        return String(body.prefix(80))
+    }
+
+    private func taskRequestBody(
+        _ request: WorkBatchTaskRequest,
+        fallbackTitle: String,
+    ) -> String {
+        let body = request.normalizedBody
+        if !body.isEmpty {
+            return body
+        }
+        return fallbackTitle
     }
 
     private func doneSentence(_ rawSummary: String, fallback: String) -> String {

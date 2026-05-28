@@ -188,6 +188,7 @@ final class WorkBatchTaskSessionTests: XCTestCase {
         XCTAssertTrue(prompt.contains("Task claim"))
         XCTAssertTrue(prompt.contains("Done report"))
         XCTAssertTrue(prompt.contains("Checkpoint request"))
+        XCTAssertTrue(prompt.contains("Task request"))
         XCTAssertTrue(prompt.contains("Do not narrate Capacitor artifact mechanics"))
     }
 
@@ -557,6 +558,8 @@ final class WorkBatchTaskSessionTests: XCTestCase {
 
         XCTAssertTrue(mirror.markdown.contains("Batch: Mobile prototype"))
         XCTAssertTrue(mirror.markdown.contains("- [queued] Add green border around the mobile prototype (`task-1`)"))
+        XCTAssertTrue(mirror.markdown.contains(".capacitor/work-batch-task-requests/<task-id>.json"))
+        XCTAssertTrue(mirror.markdown.contains("manual_user_instruction"))
         XCTAssertTrue(mirror.markdown.contains(".capacitor/work-batch-claims/<task-id>.json"))
         XCTAssertTrue(mirror.markdown.contains("\"status\":\"working\""))
         XCTAssertTrue(mirror.markdown.contains("\"delivery_generation\":\"batch-mobile:1775000000\""))

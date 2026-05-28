@@ -897,6 +897,19 @@ extension AppState {
         }
     }
 
+    func handleWorkBatchTaskRequestIngestResults(
+        _ results: [WorkBatchTaskRequestIngestResult],
+        projects _: [Project],
+    ) {
+        guard !results.isEmpty else { return }
+
+        if results.count == 1, let result = results.first {
+            uiState.toast = ToastMessage("Task added: \(result.taskTitle).")
+        } else {
+            uiState.toast = ToastMessage("\(results.count) Tasks added.")
+        }
+    }
+
     func handleWorkBatchCheckpointIngestResults(
         _ results: [WorkBatchCheckpointIngestResult],
         projects _: [Project],

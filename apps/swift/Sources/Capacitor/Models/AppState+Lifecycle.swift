@@ -208,26 +208,48 @@ extension AppState {
         context: RuntimeSnapshotApplicator.RequestContext,
     ) async {
         let outcome = runtimeSnapshotApplicator.apply(snapshot, context: context)
-        if outcome.decision == .applied {
-            _ = workBatchAutoRouter.reconcileBindings(
-                projects: context.projects,
-                sessions: snapshot.sessions,
-            )
-            _ = workBatchAutoRouter.ingestTaskClaims(
-                projects: context.projects,
-            )
-            let completedTasks = workBatchAutoRouter.ingestCompletionReports(
-                projects: context.projects,
-            )
-            await followThroughWorkBatchCompletionResults(completedTasks, projects: context.projects)
-            handleWorkBatchCompletionIngestResults(completedTasks, projects: context.projects)
-            let checkpoints = workBatchAutoRouter.ingestCheckpointRequests(
-                projects: context.projects,
-            )
-            handleWorkBatchCheckpointIngestResults(checkpoints, projects: context.projects)
-            await followThroughOpenWorkBatchTasks(projects: context.projects)
+        if shouldPollWorkBatchArtifacts(after: outcome.decision) {
+            await pollWorkBatchArtifacts(snapshot: snapshot, context: context)
         }
         executeRuntimeSnapshotEffects(outcome.effects)
+    }
+
+    private func shouldPollWorkBatchArtifacts(
+        after decision: RuntimeSnapshotApplicator.Decision,
+    ) -> Bool {
+        switch decision {
+        case .applied, .duplicateVersionNoop:
+            true
+        case .ignoredStaleGeneration, .ignoredStaleVersion, .failureHeld, .failureCleared:
+            false
+        }
+    }
+
+    private func pollWorkBatchArtifacts(
+        snapshot: RuntimeSnapshot,
+        context: RuntimeSnapshotApplicator.RequestContext,
+    ) async {
+        _ = workBatchAutoRouter.reconcileBindings(
+            projects: context.projects,
+            sessions: snapshot.sessions,
+        )
+        let requestedTasks = workBatchAutoRouter.ingestTaskRequests(
+            projects: context.projects,
+        )
+        handleWorkBatchTaskRequestIngestResults(requestedTasks, projects: context.projects)
+        _ = workBatchAutoRouter.ingestTaskClaims(
+            projects: context.projects,
+        )
+        let completedTasks = workBatchAutoRouter.ingestCompletionReports(
+            projects: context.projects,
+        )
+        await followThroughWorkBatchCompletionResults(completedTasks, projects: context.projects)
+        handleWorkBatchCompletionIngestResults(completedTasks, projects: context.projects)
+        let checkpoints = workBatchAutoRouter.ingestCheckpointRequests(
+            projects: context.projects,
+        )
+        handleWorkBatchCheckpointIngestResults(checkpoints, projects: context.projects)
+        await followThroughOpenWorkBatchTasks(projects: context.projects)
     }
 
     @MainActor

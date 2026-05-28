@@ -282,6 +282,247 @@ final class AppStateRuntimeSnapshotEffectTests: XCTestCase {
         XCTAssertNil(appState.uiState.toast)
     }
 
+    func testRuntimeSnapshotApplyIngestsTaskRequestsBeforeTaskClaims() async throws {
+        let fileManager = FileManager.default
+        let tempDir = fileManager.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let projectRoot = tempDir.appendingPathComponent("project", isDirectory: true)
+        let worktreeURL = projectRoot.appendingPathComponent(".capacitor/worktrees/batch-mobile", isDirectory: true)
+        try fileManager.createDirectory(at: worktreeURL, withIntermediateDirectories: true)
+        addTeardownBlock {
+            try? fileManager.removeItem(at: tempDir)
+        }
+
+        let stateStore = WorkBatchStateStore(
+            fileURL: tempDir.appendingPathComponent("state.json"),
+            fileManager: fileManager,
+        )
+        let bindingStore = WorkBatchCockpitBindingStore(
+            fileURL: tempDir.appendingPathComponent("bindings.json"),
+            fileManager: fileManager,
+        )
+        let now = Date(timeIntervalSince1970: 1_775_000_000)
+        let requestTime = now.addingTimeInterval(20)
+        let claimTime = requestTime.addingTimeInterval(5)
+        try stateStore.save(WorkBatchStateSnapshot(
+            version: 1,
+            batches: [
+                WorkBatchRecord(
+                    id: "batch-mobile",
+                    name: "Mobile prototype",
+                    projectPath: projectRoot.path,
+                    status: .ready,
+                    currentActivitySummary: "Ready.",
+                    taskIDs: ["task-green"],
+                    cockpitBindingID: "batch-mobile",
+                    createdAt: now,
+                    updatedAt: now,
+                ),
+            ],
+            tasks: [
+                WorkBatchTaskRecord(
+                    id: "task-green",
+                    sourceIdeaID: "task-green",
+                    title: "Add green border",
+                    body: "",
+                    status: .done,
+                    batchID: "batch-mobile",
+                    createdAt: now,
+                    updatedAt: now,
+                ),
+            ],
+            classifications: [],
+        ))
+        try bindingStore.upsert(WorkBatchCockpitBinding(
+            id: "batch-mobile",
+            batchID: "batch-mobile",
+            batchName: "Mobile prototype",
+            projectPath: projectRoot.path,
+            worktreeName: "batch-mobile",
+            worktreePath: worktreeURL.path,
+            host: .claudeCode,
+            claudeSessionID: "session-batch",
+            status: .running,
+            createdAt: now,
+            updatedAt: now,
+        ))
+        _ = try WorkBatchTaskRequestStore(worktreePath: worktreeURL.path, fileManager: fileManager)
+            .write(WorkBatchTaskRequest(
+                taskID: "task-followup-copy",
+                title: "Fix follow-up copy",
+                body: "The user asked for clearer follow-up copy inside the session.",
+                source: "manual_user_instruction",
+                requestedAt: requestTime,
+            ))
+        _ = try WorkBatchTaskClaimStore(worktreePath: worktreeURL.path, fileManager: fileManager)
+            .write(WorkBatchTaskClaim(
+                taskID: "task-followup-copy",
+                status: "working",
+                summary: "Working on the follow-up copy.",
+                claimedAt: claimTime,
+                contextUpdatedAt: requestTime,
+                deliveryGeneration: nil,
+            ))
+
+        let router = WorkBatchAutoRouter(
+            classifier: { _ in throw NSError(domain: "test", code: 1) },
+            stateStoreFactory: { _ in stateStore },
+            bindingStoreFactory: { _ in bindingStore },
+        )
+        let appState = AppState(
+            runtimeClient: RuntimeClient(isEnabledOverride: false),
+            workBatchAutoRouter: router,
+        )
+        appState.cancelRuntimeAutomationForTesting()
+        appState.setRuntimeSnapshotGenerationForTesting(1)
+        let project = makeProject(path: projectRoot.path)
+
+        await appState.applyRuntimeSnapshotForTesting(
+            makeRuntimeSnapshot(
+                projectPath: projectRoot.path,
+                sessions: [
+                    makeRuntimeSession(
+                        sessionId: "session-batch",
+                        cwd: worktreeURL.path,
+                        projectPath: worktreeURL.path,
+                    ),
+                ],
+                delegations: [],
+                runs: [],
+            ),
+            refreshGeneration: 1,
+            correlationId: "work-batch-task-request-before-claim",
+            projects: [project],
+        )
+
+        let state = try stateStore.load()
+        let task = try XCTUnwrap(state.tasks.first { $0.id == "task-followup-copy" })
+        XCTAssertEqual(task.status, .working)
+        XCTAssertNil(task.sourceIdeaID)
+        XCTAssertEqual(state.batches.first?.currentActivitySummary, "Working on the follow-up copy.")
+        XCTAssertEqual(state.deliveryRecord(batchID: "batch-mobile")?.lastClaimAt, claimTime)
+    }
+
+    func testRuntimeSnapshotDuplicateVersionPollsWorkBatchTaskRequests() async throws {
+        let fileManager = FileManager.default
+        let tempDir = fileManager.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let projectRoot = tempDir.appendingPathComponent("project", isDirectory: true)
+        let worktreeURL = projectRoot.appendingPathComponent(".capacitor/worktrees/batch-mobile", isDirectory: true)
+        try fileManager.createDirectory(at: worktreeURL, withIntermediateDirectories: true)
+        addTeardownBlock {
+            try? fileManager.removeItem(at: tempDir)
+        }
+
+        let stateStore = WorkBatchStateStore(
+            fileURL: tempDir.appendingPathComponent("state.json"),
+            fileManager: fileManager,
+        )
+        let bindingStore = WorkBatchCockpitBindingStore(
+            fileURL: tempDir.appendingPathComponent("bindings.json"),
+            fileManager: fileManager,
+        )
+        let now = Date(timeIntervalSince1970: 1_775_000_000)
+        let requestTime = now.addingTimeInterval(20)
+        try stateStore.save(WorkBatchStateSnapshot(
+            version: 1,
+            batches: [
+                WorkBatchRecord(
+                    id: "batch-mobile",
+                    name: "Mobile prototype",
+                    projectPath: projectRoot.path,
+                    status: .ready,
+                    currentActivitySummary: "Ready.",
+                    taskIDs: ["task-green"],
+                    cockpitBindingID: "batch-mobile",
+                    createdAt: now,
+                    updatedAt: now,
+                ),
+            ],
+            tasks: [
+                WorkBatchTaskRecord(
+                    id: "task-green",
+                    sourceIdeaID: "task-green",
+                    title: "Add green border",
+                    body: "",
+                    status: .done,
+                    batchID: "batch-mobile",
+                    createdAt: now,
+                    updatedAt: now,
+                ),
+            ],
+            classifications: [],
+        ))
+        try bindingStore.upsert(WorkBatchCockpitBinding(
+            id: "batch-mobile",
+            batchID: "batch-mobile",
+            batchName: "Mobile prototype",
+            projectPath: projectRoot.path,
+            worktreeName: "batch-mobile",
+            worktreePath: worktreeURL.path,
+            host: .claudeCode,
+            claudeSessionID: "session-batch",
+            status: .running,
+            createdAt: now,
+            updatedAt: now,
+        ))
+
+        let router = WorkBatchAutoRouter(
+            classifier: { _ in throw NSError(domain: "test", code: 1) },
+            stateStoreFactory: { _ in stateStore },
+            bindingStoreFactory: { _ in bindingStore },
+        )
+        let appState = AppState(
+            runtimeClient: RuntimeClient(isEnabledOverride: false),
+            workBatchAutoRouter: router,
+        )
+        appState.cancelRuntimeAutomationForTesting()
+        appState.setRuntimeSnapshotGenerationForTesting(1)
+        let project = makeProject(path: projectRoot.path)
+        let snapshot = makeRuntimeSnapshot(
+            projectPath: projectRoot.path,
+            sessions: [
+                makeRuntimeSession(
+                    sessionId: "session-batch",
+                    cwd: worktreeURL.path,
+                    projectPath: worktreeURL.path,
+                ),
+            ],
+            delegations: [],
+            runs: [],
+            snapshotVersion: 7,
+        )
+
+        await appState.applyRuntimeSnapshotForTesting(
+            snapshot,
+            refreshGeneration: 1,
+            correlationId: "work-batch-initial-snapshot",
+            projects: [project],
+        )
+        XCTAssertNil(try stateStore.load().tasks.first { $0.id == "task-followup-copy" })
+
+        _ = try WorkBatchTaskRequestStore(worktreePath: worktreeURL.path, fileManager: fileManager)
+            .write(WorkBatchTaskRequest(
+                taskID: "task-followup-copy",
+                title: "Fix follow-up copy",
+                body: "The user asked for clearer follow-up copy inside the session.",
+                source: "manual_user_instruction",
+                requestedAt: requestTime,
+            ))
+
+        await appState.applyRuntimeSnapshotForTesting(
+            snapshot,
+            refreshGeneration: 1,
+            correlationId: "work-batch-duplicate-version",
+            projects: [project],
+        )
+
+        let state = try stateStore.load()
+        let task = try XCTUnwrap(state.tasks.first { $0.id == "task-followup-copy" })
+        XCTAssertEqual(task.status, .queued)
+        XCTAssertEqual(task.createdAt, requestTime)
+        XCTAssertEqual(state.batches.first?.status, .working)
+        XCTAssertEqual(appState.uiState.toast?.message, "Task added: Fix follow-up copy.")
+    }
+
     func testRuntimeSnapshotApplyIngestsWorkBatchCompletionReportsAndShowsToast() async throws {
         let fileManager = FileManager.default
         let tempDir = fileManager.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
@@ -618,6 +859,7 @@ final class AppStateRuntimeSnapshotEffectTests: XCTestCase {
         sessions: [RuntimeSession] = [],
         delegations: [RuntimeDelegationState],
         runs: [RuntimeRunState],
+        snapshotVersion: UInt64 = 0,
     ) -> RuntimeSnapshot {
         let timestamp = "2026-04-17T00:00:00Z"
         return RuntimeSnapshot(
@@ -641,7 +883,7 @@ final class AppStateRuntimeSnapshotEffectTests: XCTestCase {
             routingViews: [],
             delegations: delegations,
             runs: runs,
-            snapshotVersion: 0,
+            snapshotVersion: snapshotVersion,
         )
     }
 
