@@ -1828,16 +1828,15 @@ final class WorkBatchAutoRouter {
     }
 
     private func runtimeSessionLooksAwaitingInput(_ session: RuntimeSession) -> Bool {
-        let state = session.state.lowercased()
-        if state == "ready" {
+        if session.state == .ready {
             return true
         }
-        return state == "idle" &&
+        return session.state == .idle &&
             session.stateSource?.authority == "meta_awaiting_input"
     }
 
     private func runtimeSessionIsReadyWithoutTools(_ session: RuntimeSession) -> Bool {
-        session.state.lowercased() == "ready" &&
+        session.state == .ready &&
             session.toolsInFlight == 0 &&
             session.isAlive == true
     }

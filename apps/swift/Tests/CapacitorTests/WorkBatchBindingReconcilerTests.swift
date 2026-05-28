@@ -697,7 +697,7 @@ final class WorkBatchBindingReconcilerTests: XCTestCase {
         RuntimeSession(
             sessionId: sessionId,
             pid: 1234,
-            state: state,
+            state: try! SessionState.decode(wire: state),
             cwd: cwd,
             projectId: nil,
             workspaceId: nil,

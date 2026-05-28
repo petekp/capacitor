@@ -102,22 +102,22 @@ enum ProjectCardContextLineResolver {
         let milestoneID = delegationState.currentReview?.milestoneId ?? delegationState.submittedMilestoneId
 
         switch delegationState.status {
-        case "review_needed":
+        case .reviewNeeded:
             if let milestoneID, !milestoneID.isEmpty {
                 return "Milestone \(milestoneID) awaiting review"
             }
             return "Review ready"
-        case "resume_pending":
+        case .resumePending:
             if let milestoneID, !milestoneID.isEmpty {
                 return "Resuming milestone \(milestoneID)"
             }
             return "Delegation is resuming"
-        case "resume_failed":
+        case .resumeFailed:
             if let milestoneID, !milestoneID.isEmpty {
                 return "Resume failed for milestone \(milestoneID)"
             }
             return "Resume failed"
-        default:
+        case .working:
             if let milestoneID, !milestoneID.isEmpty {
                 return "Milestone \(milestoneID) in progress"
             }

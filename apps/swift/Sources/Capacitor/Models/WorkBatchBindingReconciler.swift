@@ -197,7 +197,7 @@ enum WorkBatchBindingReconciler {
         // age out of transcript signals while still being a valid, visible
         // cockpit. Only treat that snapshot as live when it is safely idle.
         return gcReason == "signal_absence" &&
-            session.state.lowercased() == "ready" &&
+            session.state == .ready &&
             session.toolsInFlight == 0
     }
 
@@ -225,10 +225,10 @@ enum WorkBatchBindingReconciler {
             return true
         }
 
-        switch session.state.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() {
-        case "working", "compacting", "waiting":
+        switch session.state {
+        case .working, .compacting, .waiting:
             return true
-        default:
+        case .ready, .idle:
             return false
         }
     }

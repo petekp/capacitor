@@ -19,7 +19,7 @@ final class ReceiptLoopRunStateTests: XCTestCase {
         XCTAssertEqual(run.id, "receipt-run-1")
         XCTAssertEqual(run.methodId, CircuitReceiptGoalPacketMethod.id)
         XCTAssertEqual(run.methodName, "Claude Receipt Goal Packet")
-        XCTAssertEqual(run.status, "active")
+        XCTAssertEqual(run.status, .active)
         XCTAssertEqual(
             run.statusMessage,
             "Working on: Improve checkpoint evidence packets. Expected next signal: receipt. Healthy silence window: ~20m",
@@ -43,7 +43,7 @@ final class ReceiptLoopRunStateTests: XCTestCase {
 
         let run = state.runtimeRunState()
 
-        XCTAssertEqual(run.status, "completed")
+        XCTAssertEqual(run.status, .completed)
         XCTAssertEqual(run.statusMessage, "Receipt captured for Tighten receipt loop")
     }
 }

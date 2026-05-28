@@ -423,7 +423,7 @@ extension AppState {
                 clientTty: clientTty,
                 sessionName: sessionName,
             )
-            guard snapshot.status != "unavailable", snapshot.target.kind != "none" else {
+            guard snapshot.status != .unavailable, snapshot.target.kind != "none" else {
                 return nil
             }
             return RuntimeRoutingView(

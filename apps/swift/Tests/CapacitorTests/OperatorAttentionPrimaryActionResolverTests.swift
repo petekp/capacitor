@@ -154,7 +154,7 @@ final class OperatorAttentionPrimaryActionResolverTests: XCTestCase {
             worktreeName: "delegation-worker-1",
             worktreePath: "/tmp/project/.capacitor/worktrees/delegation-worker-1",
             sessionId: "session-1",
-            status: status,
+            status: try! DelegationStatus.decode(wire: status),
             startedAt: "2027-01-15T07:45:00Z",
             updatedAt: "2027-01-15T08:00:00Z",
             currentReview: RuntimeDelegationReview(

@@ -87,10 +87,9 @@ final class RunStateStore {
 
     var recentTerminalRuns: [RuntimeRunState] {
         let cutoff = Date().addingTimeInterval(-3600)
-        let terminalStatuses: Set = ["completed", "failed", "cancelled"]
         return runStatesByID.values
             .filter { run in
-                terminalStatuses.contains(run.status)
+                run.status.isTerminal
                     && (parseISO8601Date(run.updatedAt).map { $0 > cutoff } ?? false)
             }
             .sorted { lhs, rhs in
@@ -100,13 +99,12 @@ final class RunStateStore {
 
     func activeRun(for idea: Idea, in project: Project) -> RuntimeRunState? {
         let normalizedProjectPath = PathNormalizer.normalize(project.path)
-        let terminalStatuses: Set = ["completed", "failed", "cancelled"]
 
         return runStatesByID.values
             .filter {
                 PathNormalizer.normalize($0.projectPath) == normalizedProjectPath
                     && $0.ideaId == idea.id
-                    && !terminalStatuses.contains($0.status)
+                    && !$0.status.isTerminal
             }
             .sorted(by: activeIdeaRunPrecedes)
             .first
@@ -231,7 +229,7 @@ final class RunStateStore {
                 worktreeName: delegation.worktreeName,
                 worktreePath: delegation.worktreePath,
                 sessionId: sessionId,
-                status: "resume_pending",
+                status: .resumePending,
                 startedAt: delegation.startedAt,
                 updatedAt: formatISO8601Timestamp(Date()),
                 submittedMilestoneId: submittedMilestoneId,
@@ -246,7 +244,7 @@ final class RunStateStore {
     }
 
     private func isEligibleRunCheckpointCandidate(_ run: RuntimeRunState) -> Bool {
-        run.status == "paused" && run.activeCheckpoint != nil
+        run.status == .paused && run.activeCheckpoint != nil
     }
 
     private func isNewlySurfacedRunCheckpoint(
@@ -255,7 +253,7 @@ final class RunStateStore {
     ) -> Bool {
         guard let checkpoint = run.activeCheckpoint else { return false }
         guard let previousRun = previousRunsByID[RuntimeRunKey(run: run)] else { return true }
-        guard previousRun.status == "paused",
+        guard previousRun.status == .paused,
               let previousCheckpoint = previousRun.activeCheckpoint
         else {
             return true
@@ -405,7 +403,7 @@ final class RunStateStore {
         runsByID: [RuntimeRunKey: RuntimeRunState],
     ) -> RuntimeCheckpointState? {
         guard let run = runsByID[RuntimeRunKey(projectPath: target.projectPath, runID: target.runID)],
-              run.status == "paused",
+              run.status == .paused,
               let checkpoint = run.activeCheckpoint,
               checkpoint.id == target.checkpointID
         else {

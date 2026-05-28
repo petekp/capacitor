@@ -16,7 +16,7 @@ enum ProjectPrimaryActionResolver {
 
         if let delegationState,
            delegationState.currentReview != nil,
-           delegationState.status == "review_needed" || delegationState.status == "resume_failed"
+           delegationState.status == .reviewNeeded || delegationState.status == .resumeFailed
         {
             return .openDelegationReview
         }

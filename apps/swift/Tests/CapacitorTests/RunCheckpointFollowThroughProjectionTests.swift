@@ -109,7 +109,7 @@ final class RunCheckpointFollowThroughProjectionTests: XCTestCase {
             projectPath: "/tmp/project",
             methodId: "method",
             methodName: "Method",
-            status: status,
+            status: try! RunStatus.decode(wire: status),
             sessionId: nil,
             delegationWorkerId: nil,
             statusMessage: statusMessage,

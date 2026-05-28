@@ -9,7 +9,7 @@ final class PhaseStepFormatterTests: XCTestCase {
         let result = PhaseStepFormatter.format(
             phases: phases,
             currentPhaseIndex: 1,
-            runStatus: "active",
+            runStatus: .active,
             statusMessage: nil,
         )
         XCTAssertEqual(result, "2/3 Implementation")
@@ -20,7 +20,7 @@ final class PhaseStepFormatterTests: XCTestCase {
         let result = PhaseStepFormatter.format(
             phases: phases,
             currentPhaseIndex: 0,
-            runStatus: "active",
+            runStatus: .active,
             statusMessage: nil,
         )
         XCTAssertEqual(result, "1/5 Scope")
@@ -33,7 +33,7 @@ final class PhaseStepFormatterTests: XCTestCase {
         let result = PhaseStepFormatter.format(
             phases: phases,
             currentPhaseIndex: 2,
-            runStatus: "completed",
+            runStatus: .completed,
             statusMessage: nil,
         )
         XCTAssertEqual(result, "3/3 Complete")
@@ -44,7 +44,7 @@ final class PhaseStepFormatterTests: XCTestCase {
         let result = PhaseStepFormatter.format(
             phases: phases,
             currentPhaseIndex: 1,
-            runStatus: "failed",
+            runStatus: .failed,
             statusMessage: nil,
         )
         XCTAssertEqual(result, "2/3 Failed at Implementation")
@@ -55,7 +55,7 @@ final class PhaseStepFormatterTests: XCTestCase {
         let result = PhaseStepFormatter.format(
             phases: phases,
             currentPhaseIndex: 0,
-            runStatus: "cancelled",
+            runStatus: .cancelled,
             statusMessage: nil,
         )
         XCTAssertEqual(result, "1/3 Cancelled")
@@ -67,7 +67,7 @@ final class PhaseStepFormatterTests: XCTestCase {
         let result = PhaseStepFormatter.format(
             phases: [],
             currentPhaseIndex: 0,
-            runStatus: "active",
+            runStatus: .active,
             statusMessage: "Doing something",
         )
         XCTAssertEqual(result, "Doing something")
@@ -77,7 +77,7 @@ final class PhaseStepFormatterTests: XCTestCase {
         let result = PhaseStepFormatter.format(
             phases: [],
             currentPhaseIndex: 0,
-            runStatus: "active",
+            runStatus: .active,
             statusMessage: nil,
         )
         XCTAssertNil(result)
@@ -88,7 +88,7 @@ final class PhaseStepFormatterTests: XCTestCase {
         let result = PhaseStepFormatter.format(
             phases: phases,
             currentPhaseIndex: 99,
-            runStatus: "active",
+            runStatus: .active,
             statusMessage: nil,
         )
         XCTAssertEqual(result, "2/2 Implementation")
@@ -101,7 +101,7 @@ final class PhaseStepFormatterTests: XCTestCase {
             RuntimePhaseInstance(
                 id: "phase-\(index)",
                 name: name,
-                status: index == 0 ? "active" : "pending",
+                status: index == 0 ? .active : .pending,
                 startedAt: nil,
                 completedAt: nil,
             )

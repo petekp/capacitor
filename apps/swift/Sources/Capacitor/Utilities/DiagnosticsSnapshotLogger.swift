@@ -103,7 +103,7 @@ enum DiagnosticsSnapshotLogger {
                 RuntimeSessionSnapshot(
                     sessionId: session.sessionId,
                     pid: session.pid,
-                    state: session.state,
+                    state: session.state.wireValue,
                     projectPath: session.projectPath,
                     updatedAt: session.updatedAt,
                     stateChangedAt: session.stateChangedAt,

@@ -73,7 +73,7 @@ final class RuntimeClientTests: XCTestCase {
 
         XCTAssertEqual(states.count, 1)
         XCTAssertEqual(states.first?.projectPath, "/tmp/core-project")
-        XCTAssertEqual(states.first?.state, "working")
+        XCTAssertEqual(states.first?.state, .working)
         XCTAssertEqual(states.first?.sessionId, "session-core")
     }
 
@@ -84,7 +84,7 @@ final class RuntimeClientTests: XCTestCase {
 
         XCTAssertEqual(sessions.count, 1)
         XCTAssertEqual(sessions.first?.sessionId, "session-core")
-        XCTAssertEqual(sessions.first?.state, "working")
+        XCTAssertEqual(sessions.first?.state, .working)
         XCTAssertEqual(sessions.first?.toolsInFlight, 1)
     }
 
@@ -147,7 +147,7 @@ final class RuntimeClientTests: XCTestCase {
         XCTAssertEqual(snapshot.delegations.first?.projectPath, "/tmp/core-project")
         XCTAssertEqual(snapshot.delegations.first?.workerId, "worker-1")
         XCTAssertEqual(snapshot.delegations.first?.sessionId, "worker-session-1")
-        XCTAssertEqual(snapshot.delegations.first?.status, "review_needed")
+        XCTAssertEqual(snapshot.delegations.first?.status, .reviewNeeded)
         XCTAssertEqual(snapshot.delegations.first?.currentReview?.milestoneId, "01")
         XCTAssertEqual(
             snapshot.delegations.first?.currentReview?.manifestPath,
@@ -163,7 +163,7 @@ final class RuntimeClientTests: XCTestCase {
         let snapshot = try await client.fetchRuntimeSnapshot(correlationId: "delegation-resume-pending")
 
         XCTAssertEqual(snapshot.delegations.count, 1)
-        XCTAssertEqual(snapshot.delegations.first?.status, "resume_pending")
+        XCTAssertEqual(snapshot.delegations.first?.status, .resumePending)
         XCTAssertEqual(snapshot.delegations.first?.submittedMilestoneId, "01")
         XCTAssertEqual(snapshot.delegations.first?.currentReview?.milestoneId, "01")
     }
@@ -352,7 +352,7 @@ final class RuntimeClientTests: XCTestCase {
         XCTAssertEqual(snapshot.runs.first?.id, "run-001")
         XCTAssertEqual(snapshot.runs.first?.methodId, "method-001")
         XCTAssertEqual(snapshot.runs.first?.methodName, "Execution")
-        XCTAssertEqual(snapshot.runs.first?.status, "paused")
+        XCTAssertEqual(snapshot.runs.first?.status, .paused)
         XCTAssertEqual(snapshot.runs.first?.sessionId, "session-core")
         XCTAssertEqual(snapshot.runs.first?.delegationWorkerId, "worker-1")
     }
@@ -365,7 +365,7 @@ final class RuntimeClientTests: XCTestCase {
         let snapshot = try await client.fetchRuntimeSnapshot(correlationId: "run-past-checkpoint")
 
         let run = try XCTUnwrap(snapshot.runs.first)
-        XCTAssertEqual(run.status, "completed")
+        XCTAssertEqual(run.status, .completed)
         XCTAssertNil(run.activeCheckpoint)
         XCTAssertEqual(run.pastCheckpoints.count, 2)
         XCTAssertEqual(run.pastCheckpoints.map(\.id), [
@@ -995,6 +995,37 @@ final class RuntimeClientTests: XCTestCase {
         XCTAssertNil(run.ideaDescription)
     }
 
+    func testFetchRuntimeSnapshotThrowsOnUnknownSessionStatus() async throws {
+        // Negative control: an unrecognized session status string must surface as a
+        // thrown RuntimeStatusDecodeError at the snapshot-decode boundary
+        // (RuntimeClient.mapSessions -> SessionState.decode(wire:)), NOT a silent
+        // coercion to a default like .idle and NOT a crash.
+        let client = try makeClient(
+            coreSnapshot: Self.makeUnknownSessionStatusSnapshot(),
+        )
+
+        do {
+            _ = try await client.fetchRuntimeSnapshot(correlationId: "unknown-session-status")
+            XCTFail("expected fetchRuntimeSnapshot to throw on unknown session status")
+        } catch let error as RuntimeStatusDecodeError {
+            XCTAssertEqual(error.kind, "SessionState")
+            XCTAssertEqual(error.rawValue, "totally_bogus_status")
+        }
+
+        // Positive control: the same fixture with a valid session status decodes
+        // through the identical production path to the expected enum case.
+        let validClient = try makeClient(
+            coreSnapshot: Self.makeCoreSnapshotResponse(sessionState: "ready", projectState: "ready"),
+        )
+        let snapshot = try await validClient.fetchRuntimeSnapshot(correlationId: "known-session-status")
+        XCTAssertEqual(snapshot.sessions.first?.state, .ready)
+        XCTAssertEqual(snapshot.projectStates.first?.state, .ready)
+    }
+
+    private static func makeUnknownSessionStatusSnapshot() -> Data {
+        makeCoreSnapshotResponse(sessionState: "totally_bogus_status")
+    }
+
     private func makeMutationClient(
         mutationResponse: String,
         statusCode: Int = 200,
@@ -1069,7 +1100,7 @@ final class RuntimeClientTests: XCTestCase {
         file: StaticString = #filePath,
         line: UInt = #line,
     ) {
-        XCTAssertEqual(snapshot.status, "attached", "\(context) status mismatch", file: file, line: line)
+        XCTAssertEqual(snapshot.status, .attached, "\(context) status mismatch", file: file, line: line)
         XCTAssertEqual(snapshot.target.kind, "tmux_pane", "\(context) target kind mismatch", file: file, line: line)
         XCTAssertEqual(snapshot.target.paneId, "%42", "\(context) pane mismatch", file: file, line: line)
         XCTAssertEqual(snapshot.target.sessionName, "core", "\(context) session mismatch", file: file, line: line)
@@ -1093,7 +1124,7 @@ final class RuntimeClientTests: XCTestCase {
         file: StaticString = #filePath,
         line: UInt = #line,
     ) {
-        XCTAssertEqual(snapshot.status, "unavailable", "\(context) status mismatch", file: file, line: line)
+        XCTAssertEqual(snapshot.status, .unavailable, "\(context) status mismatch", file: file, line: line)
         XCTAssertEqual(snapshot.target.kind, "none", "\(context) target kind mismatch", file: file, line: line)
         XCTAssertEqual(snapshot.reasonCode, "NO_TRUSTED_EVIDENCE", "\(context) reason mismatch", file: file, line: line)
         XCTAssertEqual(snapshot.workspaceId, workspaceId, "\(context) workspace mismatch", file: file, line: line)
@@ -1252,6 +1283,8 @@ final class RuntimeClientTests: XCTestCase {
         routeReasonCode: String = "tmux_client_attached",
         shellTmuxClientTty: String? = "/dev/ttys099",
         sessionGcReasonJSON: String? = nil,
+        sessionState: String = "working",
+        projectState: String = "working",
         delegationJSON: String = ",\"delegations\":[]",
         runsJSON: String = ",\"runs\":[]",
     ) -> Data {
@@ -1271,7 +1304,7 @@ final class RuntimeClientTests: XCTestCase {
             "null"
         }
         let json = """
-        {\(changeVersionJSON)"projects":[{"project_id":"/tmp/core-project/.git","workspace_id":"workspace-core","project_path":"/tmp/core-project","display_name":"core-project","state":"working","updated_at":"2026-02-28T19:00:00Z","state_changed_at":"2026-02-28T19:00:00Z","representative_session_id":"session-core","latest_session_id":"session-core","session_count":1,"active_count":1,"has_session":true}],"sessions":[{"session_id":"session-core","pid":4242,"cwd":"/tmp/core-project","project_id":"/tmp/core-project/.git","project_path":"/tmp/core-project","workspace_id":"workspace-core","state":"working","state_changed_at":"2026-02-28T19:00:00Z","updated_at":"2026-02-28T19:00:00Z","last_event":"user_prompt_submit","last_activity_at":"2026-02-28T19:00:00Z","tools_in_flight":1\(sessionGcReasonField)}],"shells":[{"pid":4242,"cwd":"/tmp/core-project","tty":"/dev/ttys001","parent_app":"Ghostty","tmux_session":"core","tmux_client_tty":\(shellTmuxClientTtyJSON),"tmux_pane":"%42","updated_at":"\(shellUpdatedAt)"}],"routing":[{"workspace_id":"workspace-core","project_path":"/tmp/core-project","status":"attached","target":{"kind":"tmux_pane","terminal_app":"Ghostty","session_name":"core","pane_id":"%42","host_tty":"/dev/ttys099"},"reason_code":"\(routeReasonCode)","reason":"Attached tmux pane","updated_at":"2026-02-28T19:00:00Z"}]\(delegationJSON)\(runsJSON),"diagnostics":{"events_ingested":7,"sessions_tracked":1,"shell_signals_tracked":1,"events_skipped":0,"stale_events_skipped":0,"informational_events_skipped":0,"reducer_events_skipped":0,"last_error":null},"generated_at":"2026-02-28T19:00:00Z"}
+        {\(changeVersionJSON)"projects":[{"project_id":"/tmp/core-project/.git","workspace_id":"workspace-core","project_path":"/tmp/core-project","display_name":"core-project","state":"\(projectState)","updated_at":"2026-02-28T19:00:00Z","state_changed_at":"2026-02-28T19:00:00Z","representative_session_id":"session-core","latest_session_id":"session-core","session_count":1,"active_count":1,"has_session":true}],"sessions":[{"session_id":"session-core","pid":4242,"cwd":"/tmp/core-project","project_id":"/tmp/core-project/.git","project_path":"/tmp/core-project","workspace_id":"workspace-core","state":"\(sessionState)","state_changed_at":"2026-02-28T19:00:00Z","updated_at":"2026-02-28T19:00:00Z","last_event":"user_prompt_submit","last_activity_at":"2026-02-28T19:00:00Z","tools_in_flight":1\(sessionGcReasonField)}],"shells":[{"pid":4242,"cwd":"/tmp/core-project","tty":"/dev/ttys001","parent_app":"Ghostty","tmux_session":"core","tmux_client_tty":\(shellTmuxClientTtyJSON),"tmux_pane":"%42","updated_at":"\(shellUpdatedAt)"}],"routing":[{"workspace_id":"workspace-core","project_path":"/tmp/core-project","status":"attached","target":{"kind":"tmux_pane","terminal_app":"Ghostty","session_name":"core","pane_id":"%42","host_tty":"/dev/ttys099"},"reason_code":"\(routeReasonCode)","reason":"Attached tmux pane","updated_at":"2026-02-28T19:00:00Z"}]\(delegationJSON)\(runsJSON),"diagnostics":{"events_ingested":7,"sessions_tracked":1,"shell_signals_tracked":1,"events_skipped":0,"stale_events_skipped":0,"informational_events_skipped":0,"reducer_events_skipped":0,"last_error":null},"generated_at":"2026-02-28T19:00:00Z"}
         """
         return Data(json.utf8)
     }

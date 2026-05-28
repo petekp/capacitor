@@ -73,14 +73,14 @@ final class RuntimeClient {
 
     func fetchSessions() async throws -> [RuntimeSession] {
         let snapshot = try await requireSnapshot(operation: "fetchSessions")
-        let sessions = mapSessions(snapshot)
+        let sessions = try mapSessions(snapshot)
         DebugLog.write("RuntimeClient.fetchSessions source=\(runtimeSourceLabel) count=\(sessions.count)")
         return sessions
     }
 
     func fetchProjectStates(correlationId: String? = nil) async throws -> [RuntimeProjectState] {
         let snapshot = try await requireSnapshot(correlationId: correlationId, operation: "fetchProjectStates")
-        let states = mapProjectStates(snapshot)
+        let states = try mapProjectStates(snapshot)
         let cid = correlationId ?? "none"
         DebugLog.write("RuntimeClient.fetchProjectStates source=\(runtimeSourceLabel) cid=\(cid) count=\(states.count)")
         return states
@@ -152,7 +152,7 @@ final class RuntimeClient {
             clientTty: clientTty,
             sessionName: sessionName,
         )
-        return mapCoreRoutingSnapshot(
+        return try mapCoreRoutingSnapshot(
             route,
             projectPath: projectPath,
             workspaceId: workspaceId,
@@ -430,9 +430,9 @@ final class RuntimeClient {
         correlationId: String? = nil,
         operation: String,
     ) throws -> RuntimeSnapshot {
-        let projectStates = mapProjectStates(snapshot)
-        let sessions = mapSessions(snapshot)
-        let runs = mapRuns(snapshot)
+        let projectStates = try mapProjectStates(snapshot)
+        let sessions = try mapSessions(snapshot)
+        let runs = try mapRuns(snapshot)
         guard let shellState = mapShellState(
             snapshot,
             correlationId: correlationId,
@@ -450,20 +450,20 @@ final class RuntimeClient {
             projectStates: projectStates,
             sessions: sessions,
             shellState: shellState,
-            routingViews: mapRoutingViews(snapshot),
-            delegations: mapDelegations(snapshot),
+            routingViews: try mapRoutingViews(snapshot),
+            delegations: try mapDelegations(snapshot),
             runs: runs,
             changeVersion: snapshot.changeVersion,
         )
     }
 
-    private func mapProjectStates(_ snapshot: SnapshotPayload) -> [RuntimeProjectState] {
-        snapshot.projects.map { project in
+    private func mapProjectStates(_ snapshot: SnapshotPayload) throws -> [RuntimeProjectState] {
+        try snapshot.projects.map { project in
             RuntimeProjectState(
                 projectId: project.projectId,
                 workspaceId: project.workspaceId,
                 projectPath: project.projectPath,
-                state: project.state,
+                state: try SessionState.decode(wire: project.state),
                 updatedAt: project.updatedAt,
                 stateChangedAt: project.stateChangedAt,
                 sessionId: project.representativeSessionId,
@@ -475,12 +475,12 @@ final class RuntimeClient {
         }
     }
 
-    private func mapSessions(_ snapshot: SnapshotPayload) -> [RuntimeSession] {
-        snapshot.sessions.map { session in
+    private func mapSessions(_ snapshot: SnapshotPayload) throws -> [RuntimeSession] {
+        try snapshot.sessions.map { session in
             RuntimeSession(
                 sessionId: session.sessionId,
                 pid: session.pid,
-                state: session.state,
+                state: try SessionState.decode(wire: session.state),
                 cwd: session.cwd,
                 projectId: session.projectId,
                 workspaceId: session.workspaceId,
@@ -533,12 +533,12 @@ final class RuntimeClient {
         return ShellCwdState(version: 1, shells: shells)
     }
 
-    private func mapRoutingViews(_ snapshot: SnapshotPayload) -> [RuntimeRoutingView] {
-        snapshot.routing.map { route in
+    private func mapRoutingViews(_ snapshot: SnapshotPayload) throws -> [RuntimeRoutingView] {
+        try snapshot.routing.map { route in
             RuntimeRoutingView(
                 workspaceId: route.workspaceId,
                 projectPath: route.projectPath,
-                status: route.status,
+                status: try RoutingStatus.decode(wire: route.status),
                 target: route.target,
                 reasonCode: normalizeReasonCode(route.reasonCode),
                 reason: route.reason,
@@ -547,8 +547,8 @@ final class RuntimeClient {
         }
     }
 
-    private func mapDelegations(_ snapshot: SnapshotPayload) -> [RuntimeDelegationState] {
-        snapshot.delegations.map { delegation in
+    private func mapDelegations(_ snapshot: SnapshotPayload) throws -> [RuntimeDelegationState] {
+        try snapshot.delegations.map { delegation in
             RuntimeDelegationState(
                 projectPath: delegation.projectPath,
                 workerId: delegation.workerId,
@@ -556,7 +556,7 @@ final class RuntimeClient {
                 worktreeName: delegation.worktreeName,
                 worktreePath: delegation.worktreePath,
                 sessionId: delegation.sessionId,
-                status: delegation.status,
+                status: try DelegationStatus.decode(wire: delegation.status),
                 startedAt: delegation.startedAt,
                 updatedAt: delegation.updatedAt,
                 submittedMilestoneId: delegation.submittedMilestoneId,
@@ -572,31 +572,29 @@ final class RuntimeClient {
         }
     }
 
-    private func mapRuns(_ snapshot: SnapshotPayload) -> [RuntimeRunState] {
-        snapshot.runs.map(RuntimeRunState.init)
+    private func mapRuns(_ snapshot: SnapshotPayload) throws -> [RuntimeRunState] {
+        try snapshot.runs.map(RuntimeRunState.init)
     }
 
     private func mapCoreRoutingSnapshot(
         _ route: SnapshotRoutingPayload,
         projectPath: String,
         workspaceId _: String?,
-    ) -> CoreRoutingSnapshot {
-        let normalizedStatus = route.status
+    ) throws -> CoreRoutingSnapshot {
+        let status = try RoutingStatus.decode(wire: route.status)
         let reasonCode = normalizeReasonCode(route.reasonCode)
 
-        let confidence = if normalizedStatus == "attached" {
-            "high"
-        } else if normalizedStatus == "detached" {
-            "medium"
-        } else {
-            "low"
+        let confidence = switch status {
+        case .attached: "high"
+        case .detached: "medium"
+        case .unavailable: "low"
         }
 
         return CoreRoutingSnapshot(
             version: 1,
             workspaceId: route.workspaceId,
             projectPath: PathNormalizer.normalize(projectPath),
-            status: normalizedStatus,
+            status: status,
             target: route.target,
             confidence: confidence,
             reasonCode: reasonCode,
@@ -1109,20 +1107,20 @@ private extension RuntimeCheckpointState {
 }
 
 private extension RuntimeRunState {
-    init(_ payload: SnapshotRunPayload) {
+    init(_ payload: SnapshotRunPayload) throws {
         id = payload.id
         projectPath = payload.projectPath
         methodId = payload.methodId
         methodName = payload.methodName
-        status = payload.status
+        status = try RunStatus.decode(wire: payload.status)
         sessionId = payload.sessionId
         delegationWorkerId = payload.delegationWorkerId
         statusMessage = payload.statusMessage
-        phases = payload.phases.map { phase in
+        phases = try payload.phases.map { phase in
             RuntimePhaseInstance(
                 id: phase.id,
                 name: phase.name,
-                status: phase.status,
+                status: try PhaseStatus.decode(wire: phase.status),
                 startedAt: phase.startedAt,
                 completedAt: phase.completedAt,
             )

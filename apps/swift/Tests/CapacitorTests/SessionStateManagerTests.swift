@@ -100,7 +100,7 @@ final class SessionStateManagerTests: XCTestCase {
                 projectId: "/tmp/core-project/.git",
                 workspaceId: "workspace-core",
                 projectPath: "/tmp/core-project",
-                state: "working",
+                state: .working,
                 updatedAt: fixtureStateTimestamp,
                 stateChangedAt: fixtureStateTimestamp,
                 sessionId: "session-representative",
@@ -795,7 +795,7 @@ final class SessionStateManagerTests: XCTestCase {
         RuntimeSession(
             sessionId: sessionId,
             pid: pid,
-            state: state,
+            state: try! SessionState.decode(wire: state),
             cwd: "/tmp",
             projectId: nil,
             workspaceId: nil,
@@ -871,17 +871,18 @@ final class SessionStateManagerTests: XCTestCase {
         updatedAt: String? = nil,
         stateChangedAt: String? = nil,
     ) -> RuntimeProjectState {
-        RuntimeProjectState(
+        let decodedState = try! SessionState.decode(wire: state)
+        return RuntimeProjectState(
             projectId: nil,
             workspaceId: nil,
             projectPath: projectPath,
-            state: state,
+            state: decodedState,
             updatedAt: updatedAt ?? fixtureStateTimestamp,
             stateChangedAt: stateChangedAt ?? fixtureStateTimestamp,
             sessionId: sessionId,
             latestSessionId: sessionId,
             sessionCount: sessionId == nil ? 0 : 1,
-            activeCount: state == "working" ? 1 : 0,
+            activeCount: decodedState == .working ? 1 : 0,
             hasSession: sessionId != nil,
         )
     }

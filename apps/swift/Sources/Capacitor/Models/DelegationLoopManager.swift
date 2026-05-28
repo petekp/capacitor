@@ -800,7 +800,7 @@ actor DelegationLoopManager {
             )
         }
 
-        let shouldScanForReview = delegation.status == "working" || delegation.status == "resume_pending"
+        let shouldScanForReview = delegation.status == .working || delegation.status == .resumePending
         guard shouldScanForReview else { return }
 
         if fileManager.fileExists(atPath: rootPaths.completionMarkerPath.path) {

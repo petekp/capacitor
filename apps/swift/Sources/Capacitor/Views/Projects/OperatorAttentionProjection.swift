@@ -202,7 +202,7 @@ enum OperatorAttentionProjection {
 
         if let delegationState,
            delegationState.currentReview != nil,
-           delegationState.status == "review_needed" || delegationState.status == "resume_failed"
+           delegationState.status == .reviewNeeded || delegationState.status == .resumeFailed
         {
             let lastChangedAt = delegationState.currentReview.flatMap { parseISO8601Date($0.requestedAt) }
                 ?? parseISO8601Date(delegationState.updatedAt)
@@ -213,11 +213,11 @@ enum OperatorAttentionProjection {
                     kind: .delegationReview,
                     projectPath: project.path,
                     title: project.name,
-                    reason: delegationState.status == "resume_failed"
+                    reason: delegationState.status == .resumeFailed
                         ? "Worker resume failed and review is ready to retry"
                         : "Worker needs a decision before continuing",
                     ageLabel: nil,
-                    recommendedAction: delegationState.status == "resume_failed" ? "Retry review" : "Review brief",
+                    recommendedAction: delegationState.status == .resumeFailed ? "Retry review" : "Review brief",
                     lastChangedAt: lastChangedAt,
                     target: .project(path: project.path),
                 ),
@@ -270,7 +270,7 @@ enum OperatorAttentionProjection {
         }
 
         if let staleRun = projectRuns
-            .filter({ $0.status == "active" && SessionStaleness.isRunFreshnessExpired(updatedAt: $0.updatedAt, now: now) })
+            .filter({ $0.status == .active && SessionStaleness.isRunFreshnessExpired(updatedAt: $0.updatedAt, now: now) })
             .sorted(by: runPrecedesByUpdatedDescending)
             .first
         {
@@ -622,7 +622,7 @@ enum OperatorAttentionProjection {
 
     private static func oldestPausedCheckpointRun(_ runs: [RuntimeRunState]) -> RuntimeRunState? {
         runs
-            .filter { $0.status == "paused" && $0.activeCheckpoint != nil }
+            .filter { $0.status == .paused && $0.activeCheckpoint != nil }
             .sorted { lhs, rhs in
                 let comparison = compareTimestamps(
                     lhs.activeCheckpoint?.createdAt ?? lhs.updatedAt,

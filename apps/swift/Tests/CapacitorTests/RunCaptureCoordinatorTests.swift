@@ -977,7 +977,7 @@ final class RunCaptureCoordinatorTests: XCTestCase {
             projectPath: projectPath,
             methodId: "checkpoint-review",
             methodName: "Checkpoint Review",
-            status: "paused",
+            status: .paused,
             sessionId: "session-1",
             delegationWorkerId: nil,
             statusMessage: nil,

@@ -13,7 +13,7 @@ final class ActivationPolicyTests: XCTestCase {
             route: RuntimeRoutingView(
                 workspaceId: "workspace-capacitor",
                 projectPath: "/Users/pete/Code/capacitor",
-                status: "attached",
+                status: .attached,
                 target: CoreRoutingTarget(
                     kind: "tmux_pane",
                     terminalApp: "ghostty",
@@ -44,7 +44,7 @@ final class ActivationPolicyTests: XCTestCase {
             route: RuntimeRoutingView(
                 workspaceId: "workspace-capacitor",
                 projectPath: "/Users/pete/Code/capacitor",
-                status: "attached",
+                status: .attached,
                 target: CoreRoutingTarget(
                     kind: "tmux_pane",
                     terminalApp: nil,

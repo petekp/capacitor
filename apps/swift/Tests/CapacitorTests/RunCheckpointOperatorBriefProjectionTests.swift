@@ -101,7 +101,7 @@ final class RunCheckpointOperatorBriefProjectionTests: XCTestCase {
             projectPath: "/tmp/project",
             methodId: "method",
             methodName: methodName,
-            status: "paused",
+            status: .paused,
             sessionId: nil,
             delegationWorkerId: nil,
             statusMessage: nil,

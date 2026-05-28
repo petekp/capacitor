@@ -241,7 +241,7 @@ struct ProjectCard: View {
         layoutMode == .dock ? "DockProjectCard" : "ProjectCardView"
     }
 
-    private var delegationStatus: String? {
+    private var delegationStatus: DelegationStatus? {
         delegationState?.status
     }
 
@@ -263,7 +263,7 @@ struct ProjectCard: View {
     private var hasOpenDelegationReview: Bool {
         guard let delegationState else { return false }
         return delegationState.currentReview != nil
-            && (delegationState.status == "review_needed" || delegationState.status == "resume_failed")
+            && (delegationState.status == .reviewNeeded || delegationState.status == .resumeFailed)
     }
 
     private var accessibilityStatusDescription: String {
@@ -272,16 +272,16 @@ struct ProjectCard: View {
         if let runState = visibleRunVisualState.sessionState {
             return runState.accessibilityStatusDescription
         }
-        if delegationStatus == "review_needed", delegationState?.currentReview != nil {
+        if delegationStatus == .reviewNeeded, delegationState?.currentReview != nil {
             return "Delegation review needed"
         }
-        if delegationStatus == "resume_pending" {
+        if delegationStatus == .resumePending {
             return "Worker resuming after review feedback"
         }
-        if delegationStatus == "resume_failed", delegationState?.currentReview != nil {
+        if delegationStatus == .resumeFailed, delegationState?.currentReview != nil {
             return "Worker resume failed and review is ready to retry"
         }
-        if delegationStatus == "resume_failed" {
+        if delegationStatus == .resumeFailed {
             return "Worker resume failed"
         }
         if let workBatchState {
@@ -294,12 +294,12 @@ struct ProjectCard: View {
         guard layoutMode == .vertical else { return "Open in Terminal" }
 
         if hasOpenDelegationReview {
-            if delegationStatus == "resume_failed" {
+            if delegationStatus == .resumeFailed {
                 return "Retry Review"
             }
             return "Open Review"
         }
-        if delegationStatus == "resume_pending" {
+        if delegationStatus == .resumePending {
             return "Open in Terminal While Resuming"
         }
         return "Open in Terminal"
@@ -308,16 +308,16 @@ struct ProjectCard: View {
     private var accessibilityHintText: String? {
         guard layoutMode == .vertical else { return nil }
 
-        if delegationStatus == "review_needed", delegationState?.currentReview != nil {
+        if delegationStatus == .reviewNeeded, delegationState?.currentReview != nil {
             return "Double-tap to review the delegated work. Use actions menu for more options."
         }
-        if delegationStatus == "resume_pending" {
+        if delegationStatus == .resumePending {
             return "Double-tap to open in terminal while the worker resumes in the background. Use actions menu for more options."
         }
-        if delegationStatus == "resume_failed", delegationState?.currentReview != nil {
+        if delegationStatus == .resumeFailed, delegationState?.currentReview != nil {
             return "Double-tap to reopen the review and retry resuming the worker. Use actions menu for more options."
         }
-        if delegationStatus == "resume_failed" {
+        if delegationStatus == .resumeFailed {
             return "Double-tap to open in terminal and inspect the failed resume. Use actions menu for more options."
         }
         return "Double-tap to open in terminal. Use actions menu for more options."
@@ -451,7 +451,7 @@ struct ProjectCard: View {
 
                 Spacer(minLength: 0)
 
-                if delegationState?.status == "review_needed", delegationState?.currentReview != nil {
+                if delegationState?.status == .reviewNeeded, delegationState?.currentReview != nil {
                     HStack(spacing: 4) {
                         Image(systemName: "text.badge.star")
                             .font(AppTypography.captionSmall)

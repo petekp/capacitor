@@ -73,14 +73,14 @@ struct ReceiptLoopRunState: Identifiable, Equatable {
         )
     }
 
-    private var runtimeStatus: String {
+    private var runtimeStatus: RunStatus {
         switch status {
         case .running:
-            "active"
+            .active
         case .completed:
-            "completed"
+            .completed
         case .failed:
-            "failed"
+            .failed
         }
     }
 

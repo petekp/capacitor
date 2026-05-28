@@ -140,10 +140,10 @@ struct RuntimeRoutingRollout: Decodable {
     }
 }
 
-struct RuntimeSession: Decodable {
+struct RuntimeSession {
     let sessionId: String
     let pid: UInt32
-    let state: String
+    let state: SessionState
     let cwd: String
     let projectId: String?
     let workspaceId: String?
@@ -157,25 +157,6 @@ struct RuntimeSession: Decodable {
     let lastAuthoritativeEventAt: String?
     let gcReason: String?
     let isAlive: Bool?
-
-    enum CodingKeys: String, CodingKey {
-        case sessionId = "session_id"
-        case pid
-        case state
-        case cwd
-        case projectId = "project_id"
-        case workspaceId = "workspace_id"
-        case projectPath = "project_path"
-        case updatedAt = "updated_at"
-        case stateChangedAt = "state_changed_at"
-        case lastEvent = "last_event"
-        case lastActivityAt = "last_activity_at"
-        case toolsInFlight = "tools_in_flight"
-        case stateSource = "state_source"
-        case lastAuthoritativeEventAt = "last_authoritative_event_at"
-        case gcReason = "gc_reason"
-        case isAlive = "is_alive"
-    }
 }
 
 struct RuntimeStateSource: Decodable {
@@ -190,11 +171,11 @@ struct RuntimeStateSource: Decodable {
     }
 }
 
-struct RuntimeProjectState: Decodable {
+struct RuntimeProjectState {
     let projectId: String?
     let workspaceId: String?
     let projectPath: String
-    let state: String
+    let state: SessionState
     let updatedAt: String
     let stateChangedAt: String
     let sessionId: String?
@@ -202,20 +183,6 @@ struct RuntimeProjectState: Decodable {
     let sessionCount: Int
     let activeCount: Int
     let hasSession: Bool
-
-    enum CodingKeys: String, CodingKey {
-        case projectId = "project_id"
-        case workspaceId = "workspace_id"
-        case projectPath = "project_path"
-        case state
-        case updatedAt = "updated_at"
-        case stateChangedAt = "state_changed_at"
-        case sessionId = "session_id"
-        case latestSessionId = "latest_session_id"
-        case sessionCount = "session_count"
-        case activeCount = "active_count"
-        case hasSession = "has_session"
-    }
 }
 
 struct RuntimeSnapshot {
@@ -252,32 +219,18 @@ struct RuntimeDelegationReview: Decodable, Equatable {
     }
 }
 
-struct RuntimeDelegationState: Decodable, Equatable {
+struct RuntimeDelegationState: Equatable {
     let projectPath: String
     let workerId: String
     let ideaId: String?
     let worktreeName: String
     let worktreePath: String
     let sessionId: String?
-    let status: String
+    let status: DelegationStatus
     let startedAt: String
     let updatedAt: String
     let submittedMilestoneId: String?
     let currentReview: RuntimeDelegationReview?
-
-    enum CodingKeys: String, CodingKey {
-        case projectPath = "project_path"
-        case workerId = "worker_id"
-        case ideaId = "idea_id"
-        case worktreeName = "worktree_name"
-        case worktreePath = "worktree_path"
-        case sessionId = "session_id"
-        case status
-        case startedAt = "started_at"
-        case updatedAt = "updated_at"
-        case submittedMilestoneId = "submitted_milestone_id"
-        case currentReview = "current_review"
-    }
 
     init(
         projectPath: String,
@@ -286,7 +239,7 @@ struct RuntimeDelegationState: Decodable, Equatable {
         worktreeName: String,
         worktreePath: String,
         sessionId: String?,
-        status: String,
+        status: DelegationStatus,
         startedAt: String,
         updatedAt: String,
         submittedMilestoneId: String? = nil,
@@ -490,20 +443,12 @@ struct RuntimeCheckpointState: Equatable {
     }
 }
 
-struct RuntimePhaseInstance: Equatable, Decodable {
+struct RuntimePhaseInstance: Equatable {
     let id: String
     let name: String
-    let status: String
+    let status: PhaseStatus
     let startedAt: String?
     let completedAt: String?
-
-    enum CodingKeys: String, CodingKey {
-        case id
-        case name
-        case status
-        case startedAt = "started_at"
-        case completedAt = "completed_at"
-    }
 }
 
 struct RuntimeRunState: Equatable {
@@ -511,7 +456,7 @@ struct RuntimeRunState: Equatable {
     let projectPath: String
     let methodId: String
     let methodName: String
-    let status: String
+    let status: RunStatus
     let sessionId: String?
     let delegationWorkerId: String?
     let statusMessage: String?
@@ -530,7 +475,7 @@ struct RuntimeRunState: Equatable {
         projectPath: String,
         methodId: String,
         methodName: String,
-        status: String,
+        status: RunStatus,
         sessionId: String?,
         delegationWorkerId: String?,
         statusMessage: String?,
@@ -605,7 +550,7 @@ struct CoreRoutingSnapshot: Equatable {
     let version: Int
     let workspaceId: String
     let projectPath: String
-    let status: String
+    let status: RoutingStatus
     let target: CoreRoutingTarget
     let confidence: String
     let reasonCode: String

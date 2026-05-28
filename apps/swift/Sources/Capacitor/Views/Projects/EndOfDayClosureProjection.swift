@@ -105,7 +105,7 @@ struct EndOfDayClosureContent: Equatable {
         var counters = TodayCounters()
 
         for run in runs {
-            if run.status == "completed",
+            if run.status == .completed,
                isToday(run.updatedAt, now: now, calendar: calendar)
             {
                 counters.completedRuns += 1

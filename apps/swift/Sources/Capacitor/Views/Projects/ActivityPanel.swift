@@ -268,7 +268,7 @@ private struct RunCompletionCard: View {
     let run: RuntimeRunState
 
     private var isSuccess: Bool {
-        run.status == "completed"
+        run.status == .completed
     }
 
     private var statusColor: Color {
@@ -277,11 +277,11 @@ private struct RunCompletionCard: View {
 
     private var statusIcon: String {
         switch run.status {
-        case "completed":
+        case .completed:
             "checkmark.circle.fill"
-        case "cancelled":
+        case .cancelled:
             "xmark.circle.fill"
-        default:
+        case .created, .active, .paused, .failed:
             "exclamationmark.triangle.fill"
         }
     }
@@ -299,7 +299,7 @@ private struct RunCompletionCard: View {
         {
             return message
         }
-        return run.status == "cancelled" ? "Run cancelled" : "Run failed"
+        return run.status == .cancelled ? "Run cancelled" : "Run failed"
     }
 
     private var elapsedLabel: String? {

@@ -28,7 +28,7 @@ struct ProjectCompletionBriefProjection: Equatable {
         run: RuntimeRunState,
         timeline: RunCheckpointTimelineProjection?,
     ) -> ProjectCompletionBriefProjection? {
-        guard run.status == "completed" else { return nil }
+        guard run.status == .completed else { return nil }
 
         let title = workTitle(for: run)
         let entries = timeline?.entries ?? []

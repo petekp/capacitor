@@ -192,7 +192,7 @@ final class ProjectCompletionBriefProjectionTests: XCTestCase {
             projectPath: project.path,
             methodId: "shape_and_execute",
             methodName: "Shape & Execute",
-            status: status,
+            status: try! RunStatus.decode(wire: status),
             sessionId: "session-1",
             delegationWorkerId: nil,
             statusMessage: statusMessage,
@@ -200,7 +200,7 @@ final class ProjectCompletionBriefProjectionTests: XCTestCase {
                 RuntimePhaseInstance(
                     id: "implementation",
                     name: "Implementation",
-                    status: status == "completed" ? "completed" : "active",
+                    status: status == "completed" ? .completed : .active,
                     startedAt: nil,
                     completedAt: nil,
                 ),

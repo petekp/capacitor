@@ -6,7 +6,7 @@ private let routingLogger = Logger(subsystem: "com.capacitor.app", category: "Ro
 struct RuntimeRoutingView: Equatable {
     let workspaceId: String
     let projectPath: String
-    let status: String
+    let status: RoutingStatus
     let target: CoreRoutingTarget
     let reasonCode: String
     let reason: String
@@ -30,7 +30,7 @@ final class RoutingStateStore {
         let cid = correlationId ?? "none"
         let summary = routingViews
             .map { route in
-                "\(route.workspaceId)=\(route.status):\(route.target.kind)"
+                "\(route.workspaceId)=\(route.status.wireValue):\(route.target.kind)"
             }
             .sorted()
             .joined(separator: " | ")

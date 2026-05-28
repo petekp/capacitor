@@ -8,7 +8,7 @@ final class ProjectCardContextLineResolverTests: XCTestCase {
         let inputs = ProjectCardContextLineResolver.Inputs(
             runVisualState: .working(statusMessage: "Generating plan"),
             activeRunState: nil,
-            delegationState: makeDelegation(status: "active"),
+            delegationState: makeDelegation(status: "working"),
             projectStatus: makeStatus(workingOn: "Refactoring auth module"),
         )
 
@@ -50,7 +50,7 @@ final class ProjectCardContextLineResolverTests: XCTestCase {
         let inputs = ProjectCardContextLineResolver.Inputs(
             runVisualState: .none,
             activeRunState: nil,
-            delegationState: makeDelegation(status: "active"),
+            delegationState: makeDelegation(status: "working"),
             projectStatus: makeStatus(workingOn: "Implementing auth flow"),
         )
 
@@ -79,7 +79,7 @@ final class ProjectCardContextLineResolverTests: XCTestCase {
         let inputs = ProjectCardContextLineResolver.Inputs(
             runVisualState: .none,
             activeRunState: nil,
-            delegationState: makeDelegation(status: "active"),
+            delegationState: makeDelegation(status: "working"),
             projectStatus: nil,
         )
 
@@ -220,7 +220,7 @@ final class ProjectCardContextLineResolverTests: XCTestCase {
         let inputs = ProjectCardContextLineResolver.Inputs(
             runVisualState: .completed(statusMessage: "3/3 Review"),
             activeRunState: nil,
-            delegationState: makeDelegation(status: "active"),
+            delegationState: makeDelegation(status: "working"),
             projectStatus: makeStatus(workingOn: "Should not appear"),
         )
 
@@ -292,7 +292,7 @@ final class ProjectCardContextLineResolverTests: XCTestCase {
         var inputs = ProjectCardContextLineResolver.Inputs(
             runVisualState: .working(statusMessage: nil),
             activeRunState: nil,
-            delegationState: makeDelegation(status: "active"),
+            delegationState: makeDelegation(status: "working"),
             projectStatus: makeStatus(workingOn: "Implementing auth flow"),
         )
         inputs.sessionSummary = "Should not appear"
@@ -332,7 +332,7 @@ final class ProjectCardContextLineResolverTests: XCTestCase {
             worktreeName: "wt-1",
             worktreePath: "/tmp/test-project/.worktrees/wt-1",
             sessionId: "session-1",
-            status: status,
+            status: try! DelegationStatus.decode(wire: status),
             startedAt: "2026-03-29T10:00:00Z",
             updatedAt: "2026-03-29T10:05:00Z",
             submittedMilestoneId: submittedMilestoneId,
@@ -349,7 +349,7 @@ final class ProjectCardContextLineResolverTests: XCTestCase {
             projectPath: "/tmp/test-project",
             methodId: "execution_only",
             methodName: methodName,
-            status: status,
+            status: try! RunStatus.decode(wire: status),
             sessionId: "session-1",
             delegationWorkerId: nil,
             statusMessage: nil,

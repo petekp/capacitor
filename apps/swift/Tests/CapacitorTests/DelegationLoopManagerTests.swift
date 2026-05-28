@@ -1960,7 +1960,7 @@ final class DelegationLoopManagerTests: XCTestCase {
             worktreeName: "delegation-54da230f",
             worktreePath: "/users/petepetrash/code/capacitor/.capacitor/worktrees/delegation-54da230f",
             sessionId: sessionId,
-            status: status,
+            status: try! DelegationStatus.decode(wire: status),
             startedAt: "2026-03-16T18:37:02Z",
             updatedAt: "2026-03-16T18:41:41Z",
             submittedMilestoneId: submittedMilestoneId,
@@ -2095,7 +2095,7 @@ private actor MutationProjector {
     init(initialDelegation: RuntimeDelegationState) {
         projection = DelegationProjection(
             sessionId: initialDelegation.sessionId,
-            status: initialDelegation.status,
+            status: initialDelegation.status.wireValue,
             submittedMilestoneId: initialDelegation.submittedMilestoneId,
             currentReview: initialDelegation.currentReview,
         )

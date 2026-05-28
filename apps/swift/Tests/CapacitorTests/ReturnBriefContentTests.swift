@@ -238,7 +238,7 @@ final class ReturnBriefContentTests: XCTestCase {
             projectPath: projectPath,
             methodId: "method",
             methodName: "Method",
-            status: status,
+            status: try! RunStatus.decode(wire: status),
             sessionId: nil,
             delegationWorkerId: nil,
             statusMessage: "Run in progress",
