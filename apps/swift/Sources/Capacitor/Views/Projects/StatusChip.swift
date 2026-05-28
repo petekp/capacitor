@@ -24,13 +24,7 @@ struct StatusChip: View {
     }
 
     private var accessibilityLabelText: String {
-        switch effectiveState {
-        case .working: "Working"
-        case .ready: "Ready"
-        case .idle: "Idle"
-        case .compacting: "Compacting"
-        case .waiting: "Waiting"
-        }
+        effectiveState.presentation.statusText
     }
 
     var body: some View {

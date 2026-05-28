@@ -244,20 +244,7 @@ struct DockLayoutView: View {
         }
 
         private static func stateLabel(_ state: SessionState?) -> String {
-            guard let state else { return "nil" }
-
-            switch state {
-            case .working:
-                return "Working"
-            case .ready:
-                return "Ready"
-            case .idle:
-                return "Idle"
-            case .compacting:
-                return "Compacting"
-            case .waiting:
-                return "Waiting"
-            }
+            state?.presentation.telemetryLabel ?? "nil"
         }
     }
 #endif

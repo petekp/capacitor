@@ -728,23 +728,11 @@ struct ProjectCard: View {
 
 private extension SessionState {
     var accessibilityStatusDescription: String {
-        switch self {
-        case .ready: "Ready for input"
-        case .working: "Working"
-        case .waiting: "Waiting for user action"
-        case .compacting: "Compacting history"
-        case .idle: "Idle"
-        }
+        presentation.accessibilityDescription
     }
 
     var telemetryLabel: String {
-        switch self {
-        case .working: "Working"
-        case .ready: "Ready"
-        case .idle: "Idle"
-        case .compacting: "Compacting"
-        case .waiting: "Waiting"
-        }
+        presentation.telemetryLabel
     }
 }
 

@@ -7,19 +7,10 @@ enum WorkBatchStatus: String, Codable, Equatable {
     case compacting
     case idle
 
+    /// The short status word, sourced from the canonical SessionState presentation
+    /// via the existing `.sessionState` bridge so it never diverges from card chips.
     var label: String {
-        switch self {
-        case .ready:
-            "Ready"
-        case .working:
-            "Working"
-        case .waiting:
-            "Waiting"
-        case .compacting:
-            "Compacting"
-        case .idle:
-            "Idle"
-        }
+        sessionState.presentation.statusText
     }
 
     var sessionState: SessionState {
