@@ -194,6 +194,59 @@ final class WorkBatchDeliveryPolicyTests: XCTestCase {
         )
     }
 
+    func testMatchingActionableDigestSuppressesRepeatedWakeEvenAfterLaterMirrorWrite() {
+        XCTAssertEqual(
+            WorkBatchDeliveryPolicy.decide(input(
+                bindingStatus: .running,
+                exactLiveSessionExists: true,
+                safeWakeBoundarySatisfied: true,
+                deliveryRecord: WorkBatchDeliveryRecord(
+                    batchID: "batch-mobile",
+                    lastContextWrittenAt: Self.now.addingTimeInterval(60),
+                    lastDeliveryGeneration: "batch-mobile:later",
+                    lastDeliveryAttemptAt: Self.now,
+                    lastDeliveryAttemptKind: WorkBatchDeliveryAction.wakeExistingSession.rawValue,
+                    lastClaimAt: nil,
+                    lastActionableContextDigest: "same-actionable-work",
+                    lastDeliveryAttemptDigest: "same-actionable-work",
+                ),
+            )),
+            .queueOnly,
+        )
+    }
+
+    func testChangedActionableDigestAllowsNewWakeAttempt() {
+        XCTAssertEqual(
+            WorkBatchDeliveryPolicy.decide(input(
+                bindingStatus: .running,
+                exactLiveSessionExists: true,
+                safeWakeBoundarySatisfied: true,
+                deliveryRecord: WorkBatchDeliveryRecord(
+                    batchID: "batch-mobile",
+                    lastContextWrittenAt: Self.now,
+                    lastDeliveryGeneration: "batch-mobile:now",
+                    lastDeliveryAttemptAt: Self.now,
+                    lastDeliveryAttemptKind: WorkBatchDeliveryAction.wakeExistingSession.rawValue,
+                    lastClaimAt: nil,
+                    lastActionableContextDigest: "new-actionable-work",
+                    lastDeliveryAttemptDigest: "old-actionable-work",
+                ),
+            )),
+            .wakeExistingSession,
+        )
+    }
+
+    func testWorkingOnlyTasksDoNotTriggerDeliveryPrompt() {
+        XCTAssertEqual(
+            WorkBatchDeliveryPolicy.decide(input(
+                bindingStatus: .stale,
+                exactLiveSessionExists: false,
+                taskStatus: .working,
+            )),
+            .queueOnly,
+        )
+    }
+
     func testOlderDeliveryAttemptDoesNotSuppressNewGeneration() {
         XCTAssertEqual(
             WorkBatchDeliveryPolicy.decide(input(
@@ -223,6 +276,7 @@ final class WorkBatchDeliveryPolicyTests: XCTestCase {
         checkpoints: [WorkBatchCheckpointRecord] = [],
         issues: [WorkBatchBindingReconciliationIssue] = [],
         deliveryRecord: WorkBatchDeliveryRecord? = nil,
+        taskStatus: WorkBatchTaskStatus = .queued,
     ) -> WorkBatchDeliveryPolicyInput {
         WorkBatchDeliveryPolicyInput(
             batchID: "batch-mobile",
@@ -233,7 +287,7 @@ final class WorkBatchDeliveryPolicyTests: XCTestCase {
                     sourceIdeaID: "task-green",
                     title: "Add green border",
                     body: "",
-                    status: .queued,
+                    status: taskStatus,
                     batchID: "batch-mobile",
                     createdAt: Self.now,
                     updatedAt: Self.now,

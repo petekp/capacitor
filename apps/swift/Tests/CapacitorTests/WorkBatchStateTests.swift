@@ -72,6 +72,8 @@ final class WorkBatchStateTests: XCTestCase {
                     lastDeliveryAttemptAt: now.addingTimeInterval(1),
                     lastDeliveryAttemptKind: "resume_existing_session",
                     lastClaimAt: now.addingTimeInterval(2),
+                    lastActionableContextDigest: "actionable-digest",
+                    lastDeliveryAttemptDigest: "actionable-digest",
                 ),
             ],
         )
@@ -123,11 +125,13 @@ final class WorkBatchStateTests: XCTestCase {
             batchID: "batch-mobile",
             updatedAt: now,
             deliveryGeneration: "batch-mobile:1775000000",
+            actionableContextDigest: "actionable-digest",
         )
         snapshot.recordDeliveryAttempt(
             batchID: "batch-mobile",
             attemptedAt: now.addingTimeInterval(1),
             kind: "resume_existing_session",
+            actionableContextDigest: "actionable-digest",
         )
         snapshot.recordTaskClaim(
             batchID: "batch-mobile",
@@ -144,6 +148,14 @@ final class WorkBatchStateTests: XCTestCase {
         XCTAssertEqual(
             try store.load().deliveryRecord(batchID: "batch-mobile")?.lastDeliveryGeneration,
             "batch-mobile:1775000000",
+        )
+        XCTAssertEqual(
+            try store.load().deliveryRecord(batchID: "batch-mobile")?.lastActionableContextDigest,
+            "actionable-digest",
+        )
+        XCTAssertEqual(
+            try store.load().deliveryRecord(batchID: "batch-mobile")?.lastDeliveryAttemptDigest,
+            "actionable-digest",
         )
     }
 

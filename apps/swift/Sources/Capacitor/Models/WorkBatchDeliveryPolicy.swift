@@ -52,6 +52,9 @@ enum WorkBatchDeliveryPolicy {
         guard hasOpenTasks else {
             return .queueOnly
         }
+        guard hasQueuedTasks else {
+            return .queueOnly
+        }
 
         if hasQueuedTasks, pickupClaimTimedOut(input.deliveryRecord, now: input.now) {
             return .waitForPickupTimeout
@@ -93,8 +96,17 @@ enum WorkBatchDeliveryPolicy {
             WorkBatchDeliveryAction.resumeExistingSession.rawValue,
             WorkBatchDeliveryAction.wakeExistingSession.rawValue,
         ]
-        return attemptedKinds.contains(record.lastDeliveryAttemptKind ?? "") &&
-            lastDeliveryAttemptAt >= lastContextWrittenAt
+        guard attemptedKinds.contains(record.lastDeliveryAttemptKind ?? "") else {
+            return false
+        }
+
+        if let contextDigest = record.lastActionableContextDigest,
+           let attemptDigest = record.lastDeliveryAttemptDigest
+        {
+            return attemptDigest == contextDigest
+        }
+
+        return lastDeliveryAttemptAt >= lastContextWrittenAt
     }
 
     private static func pickupClaimTimedOut(
@@ -104,10 +116,21 @@ enum WorkBatchDeliveryPolicy {
         guard let record,
               let lastContextWrittenAt = record.lastContextWrittenAt,
               let lastDeliveryAttemptAt = record.lastDeliveryAttemptAt,
-              lastDeliveryAttemptAt >= lastContextWrittenAt,
               now.timeIntervalSince(lastDeliveryAttemptAt) >= pickupClaimTimeout
         else {
             return false
+        }
+
+        if let contextDigest = record.lastActionableContextDigest,
+           let attemptDigest = record.lastDeliveryAttemptDigest
+        {
+            guard attemptDigest == contextDigest else {
+                return false
+            }
+        } else {
+            guard lastDeliveryAttemptAt >= lastContextWrittenAt else {
+                return false
+            }
         }
 
         if let lastClaimAt = record.lastClaimAt,

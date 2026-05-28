@@ -236,6 +236,8 @@ struct WorkBatchDeliveryRecord: Codable, Equatable, Identifiable {
     var lastDeliveryAttemptAt: Date?
     var lastDeliveryAttemptKind: String?
     var lastClaimAt: Date?
+    var lastActionableContextDigest: String? = nil
+    var lastDeliveryAttemptDigest: String? = nil
 
     var id: String {
         batchID
@@ -248,6 +250,8 @@ struct WorkBatchDeliveryRecord: Codable, Equatable, Identifiable {
         case lastDeliveryAttemptAt = "last_delivery_attempt_at"
         case lastDeliveryAttemptKind = "last_delivery_attempt_kind"
         case lastClaimAt = "last_claim_at"
+        case lastActionableContextDigest = "last_actionable_context_digest"
+        case lastDeliveryAttemptDigest = "last_delivery_attempt_digest"
     }
 }
 
@@ -334,6 +338,7 @@ extension WorkBatchStateSnapshot {
         batchID: String,
         updatedAt: Date,
         deliveryGeneration: String,
+        actionableContextDigest: String? = nil,
     ) {
         var record = deliveryRecord(batchID: batchID) ?? WorkBatchDeliveryRecord(
             batchID: batchID,
@@ -342,9 +347,12 @@ extension WorkBatchStateSnapshot {
             lastDeliveryAttemptAt: nil,
             lastDeliveryAttemptKind: nil,
             lastClaimAt: nil,
+            lastActionableContextDigest: nil,
+            lastDeliveryAttemptDigest: nil,
         )
         record.lastContextWrittenAt = updatedAt
         record.lastDeliveryGeneration = deliveryGeneration
+        record.lastActionableContextDigest = actionableContextDigest
         upsertDeliveryRecord(record)
     }
 
@@ -352,6 +360,7 @@ extension WorkBatchStateSnapshot {
         batchID: String,
         attemptedAt: Date,
         kind: String,
+        actionableContextDigest: String? = nil,
     ) {
         var record = deliveryRecord(batchID: batchID) ?? WorkBatchDeliveryRecord(
             batchID: batchID,
@@ -360,9 +369,12 @@ extension WorkBatchStateSnapshot {
             lastDeliveryAttemptAt: nil,
             lastDeliveryAttemptKind: nil,
             lastClaimAt: nil,
+            lastActionableContextDigest: nil,
+            lastDeliveryAttemptDigest: nil,
         )
         record.lastDeliveryAttemptAt = attemptedAt
         record.lastDeliveryAttemptKind = kind
+        record.lastDeliveryAttemptDigest = actionableContextDigest ?? record.lastActionableContextDigest
         upsertDeliveryRecord(record)
     }
 
@@ -377,6 +389,8 @@ extension WorkBatchStateSnapshot {
             lastDeliveryAttemptAt: nil,
             lastDeliveryAttemptKind: nil,
             lastClaimAt: nil,
+            lastActionableContextDigest: nil,
+            lastDeliveryAttemptDigest: nil,
         )
         record.lastClaimAt = claimedAt
         upsertDeliveryRecord(record)

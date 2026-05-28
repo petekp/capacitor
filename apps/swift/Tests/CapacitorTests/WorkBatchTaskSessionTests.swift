@@ -56,17 +56,126 @@ final class WorkBatchTaskSessionTests: XCTestCase {
         XCTAssertFalse(prompt.contains("Checkpoint request"))
     }
 
-    func testResumePromptIsOperatorFacingAndSingleLine() {
-        let prompt = WorkBatchTaskSessionCoordinator.resumePrompt(
-            contextMirrorRelativePath: WorkBatchContextMirror.relativePath,
+    func testDeliveryPromptIsOperatorFacingAndSpecific() {
+        let now = Date(timeIntervalSince1970: 1_775_000_000)
+        let prompt = WorkBatchActionableContext.deliveryPrompt(
+            batchID: "batch-mobile",
+            tasks: [
+                WorkBatchTaskRecord(
+                    id: "task-green",
+                    sourceIdeaID: "task-green",
+                    title: "Add green border",
+                    body: "",
+                    status: .queued,
+                    batchID: "batch-mobile",
+                    createdAt: now,
+                    updatedAt: now,
+                ),
+            ],
+            preferredTaskID: "task-green",
         )
 
-        XCTAssertFalse(prompt.contains("\n"))
-        XCTAssertEqual(prompt, "Assessing updated tasks...")
-        XCTAssertFalse(prompt.contains("Read .capacitor/work-batch-context.md"))
-        XCTAssertFalse(prompt.contains("Task claim"))
-        XCTAssertFalse(prompt.contains("Done report"))
-        XCTAssertFalse(prompt.contains("Checkpoint request"))
+        XCTAssertEqual(prompt, "New task queued: Add green border.")
+        XCTAssertFalse((prompt ?? "").contains("\n"))
+        XCTAssertFalse((prompt ?? "").contains("Read .capacitor/work-batch-context.md"))
+        XCTAssertFalse((prompt ?? "").contains("Task claim"))
+        XCTAssertFalse((prompt ?? "").contains("Done report"))
+        XCTAssertFalse((prompt ?? "").contains("Checkpoint request"))
+    }
+
+    func testDeliveryPromptPrefersNewTaskWhenBatchAlreadyHasQueuedWork() {
+        let now = Date(timeIntervalSince1970: 1_775_000_000)
+        let prompt = WorkBatchActionableContext.deliveryPrompt(
+            batchID: "batch-mobile",
+            tasks: [
+                WorkBatchTaskRecord(
+                    id: "task-spacing",
+                    sourceIdeaID: "task-spacing",
+                    title: "Adjust mobile spacing",
+                    body: "",
+                    status: .queued,
+                    batchID: "batch-mobile",
+                    createdAt: now,
+                    updatedAt: now,
+                ),
+                WorkBatchTaskRecord(
+                    id: "task-green",
+                    sourceIdeaID: "task-green",
+                    title: "Add green border",
+                    body: "",
+                    status: .queued,
+                    batchID: "batch-mobile",
+                    createdAt: now.addingTimeInterval(1),
+                    updatedAt: now.addingTimeInterval(1),
+                ),
+            ],
+            preferredTaskID: "task-green",
+        )
+
+        XCTAssertEqual(prompt, "New task queued: Add green border.")
+    }
+
+    func testActionableContextDigestIgnoresDoneAndWorkingTasks() {
+        let doneDigest = WorkBatchActionableContext.digest(
+            batchID: "batch-mobile",
+            tasks: [
+                WorkBatchTaskItem(id: "task-done", title: "Done", body: "", status: "done"),
+                WorkBatchTaskItem(id: "task-working", title: "Working", body: "", status: "working"),
+            ],
+            checkpoints: [],
+        )
+        let queuedDigest = WorkBatchActionableContext.digest(
+            batchID: "batch-mobile",
+            tasks: [
+                WorkBatchTaskItem(id: "task-done", title: "Done", body: "", status: "done"),
+                WorkBatchTaskItem(id: "task-queued", title: "Queued", body: "", status: "queued"),
+                WorkBatchTaskItem(id: "task-working", title: "Working", body: "", status: "working"),
+            ],
+            checkpoints: [],
+        )
+
+        XCTAssertNil(doneDigest)
+        XCTAssertNotNil(queuedDigest)
+    }
+
+    func testActionableContextDigestChangesWhenAnsweredCheckpointChanges() {
+        let now = Date(timeIntervalSince1970: 1_775_000_000)
+        let tasks = [
+            WorkBatchTaskItem(id: "task-green", title: "Add green border", body: "", status: "queued"),
+        ]
+        let firstDigest = WorkBatchActionableContext.digest(
+            batchID: "batch-mobile",
+            tasks: tasks,
+            checkpoints: [
+                checkpoint(response: "Use token A.", now: now),
+            ],
+        )
+        let secondDigest = WorkBatchActionableContext.digest(
+            batchID: "batch-mobile",
+            tasks: tasks,
+            checkpoints: [
+                checkpoint(response: "Use token B.", now: now),
+            ],
+        )
+
+        XCTAssertNotNil(firstDigest)
+        XCTAssertNotEqual(firstDigest, secondDigest)
+    }
+
+    private func checkpoint(response: String, now: Date) -> WorkBatchCheckpointRecord {
+        WorkBatchCheckpointRecord(
+            id: "checkpoint-green-token",
+            batchID: "batch-mobile",
+            taskID: "task-green",
+            question: "Which green token should I use?",
+            reason: "There are multiple green tokens.",
+            recommendedAction: nil,
+            status: .answered,
+            requestedAt: now,
+            respondedAt: now,
+            response: response,
+            updatedAt: now,
+        )
     }
 
     func testAgentInstructionsPromptCarriesHiddenBatchContract() {
@@ -318,10 +427,11 @@ final class WorkBatchTaskSessionTests: XCTestCase {
         XCTAssertEqual(scripts.count, 1)
         XCTAssertTrue(scripts[0].contains("--resume"))
         XCTAssertTrue(scripts[0].contains("assigned-session"))
+        XCTAssertFalse(scripts[0].contains("Assessing updated tasks..."))
     }
 
     @MainActor
-    func testWakeExistingSessionInputsResumePromptIntoVisibleCockpit() async throws {
+    func testWakeExistingSessionInputsSpecificDeliveryPromptIntoVisibleCockpit() async throws {
         let wakeRecorder = ExistingTerminalWakeRecorder(result: true)
         let binding = WorkBatchCockpitBinding(
             id: "batch-mobile",
@@ -346,13 +456,13 @@ final class WorkBatchTaskSessionTests: XCTestCase {
             },
         )
 
-        try await coordinator.wakeExistingSession(binding)
+        try await coordinator.wakeExistingSession(binding, prompt: "New task queued: Add green border.")
 
         let attempts = await wakeRecorder.snapshot()
         XCTAssertEqual(attempts.count, 1)
         XCTAssertEqual(attempts[0].projectPath, "/tmp/project/.capacitor/worktrees/batch-mobile")
         XCTAssertEqual(attempts[0].sessionName, "Mobile prototype")
-        XCTAssertEqual(attempts[0].prompt, "Assessing updated tasks...")
+        XCTAssertEqual(attempts[0].prompt, "New task queued: Add green border.")
         XCTAssertFalse(attempts[0].prompt.contains("Task claim"))
     }
 
@@ -376,7 +486,7 @@ final class WorkBatchTaskSessionTests: XCTestCase {
         )
 
         do {
-            try await coordinator.wakeExistingSession(binding)
+            try await coordinator.wakeExistingSession(binding, prompt: "New task queued: Add green border.")
             XCTFail("Expected failed wake to throw")
         } catch let error as WorkBatchTaskSessionError {
             XCTAssertEqual(error, .existingSessionWakeFailed)
@@ -414,7 +524,7 @@ final class WorkBatchTaskSessionTests: XCTestCase {
 
         XCTAssertEqual(request?.arguments.first, "--resume")
         XCTAssertEqual(request?.arguments.dropFirst().first, "assigned-session")
-        XCTAssertTrue(request?.arguments.last?.contains("Assessing updated tasks...") == true)
+        XCTAssertFalse((request?.arguments.contains { $0.contains("Assessing updated tasks...") }) ?? false)
         let scripts = await recorder.snapshot()
         XCTAssertEqual(scripts.count, 1)
         XCTAssertTrue(scripts[0].contains("--resume"))
@@ -422,6 +532,7 @@ final class WorkBatchTaskSessionTests: XCTestCase {
         XCTAssertTrue(scripts[0].contains("--append-system-prompt-file"))
         XCTAssertTrue(scripts[0].contains(".capacitor/work-batch-agent-instructions.md"))
         XCTAssertFalse(scripts[0].contains("Task claim"))
+        XCTAssertFalse(scripts[0].contains("Assessing updated tasks..."))
         XCTAssertTrue(scripts[0].contains("/tmp/project/.capacitor/worktrees/batch-mobile"))
     }
 
@@ -648,6 +759,7 @@ final class WorkBatchTaskSessionTests: XCTestCase {
         XCTAssertEqual(result.binding.worktreeName, "batch-mobile")
         XCTAssertEqual(result.launchRequest.arguments.prefix(2), ["--session-id", "68d42879-5c45-40da-86de-2427c64411dc"])
         XCTAssertTrue(result.launchRequest.arguments.contains("--append-system-prompt-file"))
+        XCTAssertNotNil(result.actionableContextDigest)
 
         let mirror = try String(contentsOf: result.contextMirrorURL, encoding: .utf8)
         XCTAssertTrue(mirror.contains("Add green border around the mobile prototype"))

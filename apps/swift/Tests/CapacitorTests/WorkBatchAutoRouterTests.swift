@@ -660,6 +660,7 @@ final class WorkBatchAutoRouterTests: XCTestCase {
         XCTAssertEqual(scripts.count, 1)
         XCTAssertTrue(scripts[0].contains("--resume"))
         XCTAssertTrue(scripts[0].contains("assigned-session-existing"))
+        XCTAssertTrue(scripts[0].contains("New task queued: Add green border around the mobile prototype."))
         XCTAssertEqual(result.binding?.status, .launching)
         XCTAssertEqual(try harness.bindingStore.binding(batchID: "batch-mobile")?.status, .launching)
         XCTAssertEqual(
@@ -803,7 +804,7 @@ final class WorkBatchAutoRouterTests: XCTestCase {
         XCTAssertEqual(wakes.count, 1)
         XCTAssertEqual(wakes[0].projectPath, harness.mobileWorktreePath)
         XCTAssertEqual(wakes[0].sessionName, "Mobile prototype")
-        XCTAssertEqual(wakes[0].prompt, "Assessing updated tasks...")
+        XCTAssertEqual(wakes[0].prompt, "New task queued: Add green border around the mobile prototype.")
         XCTAssertFalse(wakes[0].prompt.contains("Task claim"))
         let updatedState = try harness.stateStore.load()
         XCTAssertEqual(updatedState.tasks.first(where: { $0.id == "idea-green" })?.status, .queued)
@@ -884,7 +885,7 @@ final class WorkBatchAutoRouterTests: XCTestCase {
         XCTAssertEqual(wakes.count, 1)
         XCTAssertEqual(wakes[0].projectPath, harness.mobileWorktreePath)
         XCTAssertEqual(wakes[0].sessionName, "Mobile prototype")
-        XCTAssertEqual(wakes[0].prompt, "Assessing updated tasks...")
+        XCTAssertEqual(wakes[0].prompt, "New task queued: Add green border around the mobile prototype.")
         let updatedState = try harness.stateStore.load()
         XCTAssertEqual(updatedState.tasks.first(where: { $0.id == "idea-green" })?.status, .queued)
         XCTAssertEqual(updatedState.batches[0].currentActivitySummary, "Claude Code was nudged to pick up Add green border around the mobile prototype.")
@@ -964,7 +965,7 @@ final class WorkBatchAutoRouterTests: XCTestCase {
         XCTAssertEqual(wakes.count, 1)
         XCTAssertEqual(wakes[0].projectPath, harness.mobileWorktreePath)
         XCTAssertEqual(wakes[0].sessionName, "Mobile prototype")
-        XCTAssertEqual(wakes[0].prompt, "Assessing updated tasks...")
+        XCTAssertEqual(wakes[0].prompt, "New task queued: Add green border around the mobile prototype.")
         let updatedState = try harness.stateStore.load()
         XCTAssertEqual(updatedState.tasks.first(where: { $0.id == "idea-green" })?.status, .queued)
         XCTAssertEqual(updatedState.batches[0].currentActivitySummary, "Claude Code was nudged to pick up Add green border around the mobile prototype.")
@@ -1049,7 +1050,7 @@ final class WorkBatchAutoRouterTests: XCTestCase {
         XCTAssertEqual(wakes.count, 1)
         XCTAssertEqual(wakes[0].projectPath, harness.mobileWorktreePath)
         XCTAssertEqual(wakes[0].sessionName, "Mobile prototype")
-        XCTAssertEqual(wakes[0].prompt, "Assessing updated tasks...")
+        XCTAssertEqual(wakes[0].prompt, "New task queued: Add green border around the mobile prototype.")
         let updatedState = try harness.stateStore.load()
         XCTAssertEqual(updatedState.tasks.first(where: { $0.id == "idea-green" })?.status, .queued)
         XCTAssertEqual(updatedState.batches[0].currentActivitySummary, "Claude Code was nudged to pick up Add green border around the mobile prototype.")
@@ -1867,7 +1868,7 @@ final class WorkBatchAutoRouterTests: XCTestCase {
         XCTAssertTrue(scripts[0].contains("--append-system-prompt-file"))
         XCTAssertTrue(scripts[0].contains(".capacitor/work-batch-agent-instructions.md"))
         XCTAssertFalse(scripts[0].contains("Task claim"))
-        XCTAssertTrue(scripts[0].contains("Assessing updated tasks..."))
+        XCTAssertTrue(scripts[0].contains("New task queued: Add green border around the mobile prototype."))
     }
 
     func testProjectionReadsStoredBatchesAndBindings() throws {
@@ -2425,6 +2426,8 @@ final class WorkBatchAutoRouterTests: XCTestCase {
         XCTAssertEqual(scripts.count, 1)
         XCTAssertTrue(scripts[0].contains("--resume"))
         XCTAssertTrue(scripts[0].contains("assigned-session-existing"))
+        XCTAssertFalse(scripts[0].contains("Assessing updated tasks..."))
+        XCTAssertFalse(scripts[0].contains("New task queued:"))
     }
 
     func testIngestCompletionReportMarksTaskAndBatchDoneOnce() throws {
@@ -2569,6 +2572,7 @@ final class WorkBatchAutoRouterTests: XCTestCase {
         let scripts = await terminalRecorder.snapshot()
         XCTAssertEqual(scripts.count, 1)
         XCTAssertTrue(scripts[0].contains("--resume"))
+        XCTAssertTrue(scripts[0].contains("New task queued: Add green border."))
         XCTAssertEqual(try harness.bindingStore.binding(batchID: "batch-mobile")?.status, .launching)
         let updatedState = try harness.stateStore.load()
         XCTAssertEqual(updatedState.tasks.first(where: { $0.id == "idea-old" })?.status, .done)
@@ -2670,6 +2674,7 @@ final class WorkBatchAutoRouterTests: XCTestCase {
         let scripts = await terminalRecorder.snapshot()
         XCTAssertEqual(scripts.count, 1)
         XCTAssertTrue(scripts[0].contains("--resume"))
+        XCTAssertTrue(scripts[0].contains("New task queued: Adjust mobile spacing."))
         XCTAssertEqual(try harness.bindingStore.binding(batchID: "batch-mobile")?.status, .launching)
     }
 
@@ -2880,6 +2885,7 @@ final class WorkBatchAutoRouterTests: XCTestCase {
         let scripts = await terminalRecorder.snapshot()
         XCTAssertEqual(scripts.count, 1)
         XCTAssertTrue(scripts[0].contains("--resume"))
+        XCTAssertTrue(scripts[0].contains("New task queued: Adjust mobile spacing."))
         XCTAssertEqual(try harness.bindingStore.binding(batchID: "batch-mobile")?.status, .launching)
     }
 

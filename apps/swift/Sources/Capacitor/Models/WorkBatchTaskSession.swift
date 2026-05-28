@@ -344,6 +344,7 @@ struct WorkBatchTaskSessionStartRequest: Equatable {
 struct WorkBatchTaskSessionStartResult: Equatable {
     let binding: WorkBatchCockpitBinding
     let contextMirrorURL: URL
+    let actionableContextDigest: String?
     let launchRequest: ClaudeCodeTaskSessionLaunchRequest
 }
 
@@ -461,6 +462,11 @@ final class WorkBatchTaskSessionCoordinator {
             deliveryGeneration: request.deliveryGeneration,
             updatedAt: request.now,
         )
+        let actionableContextDigest = WorkBatchActionableContext.digest(
+            batchID: request.batchID,
+            tasks: request.tasks,
+            checkpoints: [],
+        )
         let mirrorURL = try mirror.write(fileManager: fileManager)
         _ = try writeAgentInstructions(worktreePath: worktree.path)
 
@@ -497,6 +503,7 @@ final class WorkBatchTaskSessionCoordinator {
         return WorkBatchTaskSessionStartResult(
             binding: binding,
             contextMirrorURL: mirrorURL,
+            actionableContextDigest: actionableContextDigest,
             launchRequest: launchRequest,
         )
     }
@@ -518,6 +525,7 @@ final class WorkBatchTaskSessionCoordinator {
         _ binding: WorkBatchCockpitBinding,
         allowResumeWhenFocusFails: Bool = false,
         preferFocusBeforeResume: Bool = false,
+        prompt: String? = nil,
     ) async throws -> ClaudeCodeTaskSessionLaunchRequest? {
         if preferFocusBeforeResume || shouldFocusBeforeResume(binding.status) {
             if await focusExistingTerminal(binding.worktreePath, binding.batchName) {
@@ -569,7 +577,7 @@ final class WorkBatchTaskSessionCoordinator {
         _ = try writeAgentInstructions(worktreePath: binding.worktreePath)
         let request = resumeRequest(
             for: binding,
-            prompt: Self.resumePrompt(contextMirrorRelativePath: WorkBatchContextMirror.relativePath),
+            prompt: prompt,
         )
         let script = TerminalScripts.launchWithCommand(
             projectPath: binding.worktreePath,
@@ -590,8 +598,7 @@ final class WorkBatchTaskSessionCoordinator {
         return request
     }
 
-    func wakeExistingSession(_ binding: WorkBatchCockpitBinding) async throws {
-        let prompt = Self.resumePrompt(contextMirrorRelativePath: WorkBatchContextMirror.relativePath)
+    func wakeExistingSession(_ binding: WorkBatchCockpitBinding, prompt: String) async throws {
         guard await wakeExistingTerminal(binding.worktreePath, binding.batchName, prompt) else {
             TerminalActivationTrace.log(
                 surface: .workBatchSession,
@@ -648,10 +655,6 @@ final class WorkBatchTaskSessionCoordinator {
 
     nonisolated static func initialPrompt(contextMirrorRelativePath _: String) -> String {
         "Assessing tasks..."
-    }
-
-    nonisolated static func resumePrompt(contextMirrorRelativePath _: String) -> String {
-        "Assessing updated tasks..."
     }
 
     nonisolated static func agentInstructionsPrompt(contextMirrorRelativePath: String) -> String {

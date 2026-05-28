@@ -43,6 +43,7 @@ struct WorkBatchTaskClaimIngestResult: Equatable {
 struct WorkBatchContextMirrorWriteResult: Equatable {
     let updatedAt: Date
     let deliveryGeneration: String
+    let actionableContextDigest: String?
 }
 
 struct WorkBatchCheckpointDecisionResult: Equatable {
@@ -287,6 +288,7 @@ final class WorkBatchAutoRouter {
                     batchID: route.batch.id,
                     updatedAt: mirrorResult.updatedAt,
                     deliveryGeneration: mirrorResult.deliveryGeneration,
+                    actionableContextDigest: mirrorResult.actionableContextDigest,
                 )
                 try stateStore.save(state)
             } catch {
@@ -354,6 +356,7 @@ final class WorkBatchAutoRouter {
             batchID: route.batch.id,
             updatedAt: now,
             deliveryGeneration: Self.deliveryGeneration(batchID: route.batch.id, updatedAt: now),
+            actionableContextDigest: startResult.actionableContextDigest,
         )
         try stateStore.save(stateAfterLaunch)
 
@@ -580,6 +583,7 @@ final class WorkBatchAutoRouter {
             batchID: batch.id,
             updatedAt: now,
             deliveryGeneration: deliveryGeneration,
+            actionableContextDigest: startResult.actionableContextDigest,
         )
         try stateStore.save(stateAfterLaunch)
 
@@ -703,6 +707,7 @@ final class WorkBatchAutoRouter {
                 batchID: batch.id,
                 updatedAt: mirrorResult.updatedAt,
                 deliveryGeneration: mirrorResult.deliveryGeneration,
+                actionableContextDigest: mirrorResult.actionableContextDigest,
             )
             try stateStore.save(state)
         }
@@ -843,6 +848,7 @@ final class WorkBatchAutoRouter {
             batchID: batch.id,
             updatedAt: mirrorResult.updatedAt,
             deliveryGeneration: mirrorResult.deliveryGeneration,
+            actionableContextDigest: mirrorResult.actionableContextDigest,
         )
         try stateStore.save(state)
 
@@ -1016,6 +1022,7 @@ final class WorkBatchAutoRouter {
                     batchID: batchID,
                     updatedAt: mirrorResult.updatedAt,
                     deliveryGeneration: mirrorResult.deliveryGeneration,
+                    actionableContextDigest: mirrorResult.actionableContextDigest,
                 )
             } catch {
                 DebugLog.write(
@@ -1212,6 +1219,7 @@ final class WorkBatchAutoRouter {
                     batchID: batchID,
                     updatedAt: mirrorResult.updatedAt,
                     deliveryGeneration: mirrorResult.deliveryGeneration,
+                    actionableContextDigest: mirrorResult.actionableContextDigest,
                 )
             } catch {
                 DebugLog.write(
@@ -1359,11 +1367,12 @@ final class WorkBatchAutoRouter {
         let state = try stateStore.load()
         let binding = try bindingStore.binding(batchID: batchID)
         let batchTasks = state.tasks.filter { $0.batchID == batchID }
+        let batchCheckpoints = state.checkpoints.filter { $0.batchID == batchID }
         let policyAction = WorkBatchDeliveryPolicy.decide(WorkBatchDeliveryPolicyInput(
             batchID: batchID,
             now: now,
             tasks: batchTasks,
-            checkpoints: state.checkpoints.filter { $0.batchID == batchID },
+            checkpoints: batchCheckpoints,
             binding: binding,
             reconciliationIssues: reconciliationIssues,
             mirrorWriteSucceeded: mirrorWriteSucceeded,
@@ -1379,8 +1388,16 @@ final class WorkBatchAutoRouter {
         case .wakeExistingSession:
             guard let binding else { return nil }
             let taskID = preferredTaskID ?? firstOpenTaskID(in: batchTasks)
+            let prompt = deliveryPrompt(
+                batchID: batchID,
+                tasks: batchTasks,
+                preferredTaskID: taskID,
+            )
+            guard let prompt else {
+                return binding
+            }
             do {
-                try await taskSessionCoordinator.wakeExistingSession(binding)
+                try await taskSessionCoordinator.wakeExistingSession(binding, prompt: prompt)
                 return try markExistingSessionWoken(
                     stateStore: stateStore,
                     bindingStore: bindingStore,
@@ -1470,10 +1487,16 @@ final class WorkBatchAutoRouter {
         case .resumeExistingSession:
             guard let binding else { return nil }
             let taskID = preferredTaskID ?? firstOpenTaskID(in: batchTasks)
+            let prompt = deliveryPrompt(
+                batchID: batchID,
+                tasks: batchTasks,
+                preferredTaskID: taskID,
+            )
             do {
                 _ = try await taskSessionCoordinator.openExistingSession(
                     binding,
                     allowResumeWhenFocusFails: true,
+                    prompt: prompt,
                 )
                 return try markResumeStarted(
                     stateStore: stateStore,
@@ -1513,6 +1536,18 @@ final class WorkBatchAutoRouter {
 
     private func firstQueuedTaskID(in tasks: [WorkBatchTaskRecord]) -> String? {
         tasks.first { $0.status == .queued }?.id
+    }
+
+    private func deliveryPrompt(
+        batchID: String,
+        tasks: [WorkBatchTaskRecord],
+        preferredTaskID: String?,
+    ) -> String? {
+        WorkBatchActionableContext.deliveryPrompt(
+            batchID: batchID,
+            tasks: tasks,
+            preferredTaskID: preferredTaskID,
+        )
     }
 
     private func exactLiveSessionExists(for binding: WorkBatchCockpitBinding) -> Bool {
@@ -1730,6 +1765,11 @@ final class WorkBatchAutoRouter {
         now: Date,
     ) throws -> WorkBatchContextMirrorWriteResult {
         let deliveryGeneration = Self.deliveryGeneration(batchID: batch.id, updatedAt: now)
+        let actionableContextDigest = WorkBatchActionableContext.digest(
+            batchID: batch.id,
+            tasks: tasks,
+            checkpoints: checkpoints,
+        )
         _ = try WorkBatchContextMirror(
             batchID: batch.id,
             batchName: batch.name,
@@ -1743,6 +1783,7 @@ final class WorkBatchAutoRouter {
         return WorkBatchContextMirrorWriteResult(
             updatedAt: now,
             deliveryGeneration: deliveryGeneration,
+            actionableContextDigest: actionableContextDigest,
         )
     }
 
@@ -1783,6 +1824,7 @@ final class WorkBatchAutoRouter {
         try bindingStore.upsert(updatedBinding)
 
         var state = try stateStore.load()
+        let actionableContextDigest = state.deliveryRecord(batchID: batchID)?.lastActionableContextDigest
         if let batchIndex = state.batches.firstIndex(where: { $0.id == batchID }) {
             let taskTitle = taskID
                 .flatMap { id in state.tasks.first(where: { $0.id == id })?.displayTitle }
@@ -1801,6 +1843,7 @@ final class WorkBatchAutoRouter {
             batchID: batchID,
             attemptedAt: now,
             kind: WorkBatchDeliveryAction.resumeExistingSession.rawValue,
+            actionableContextDigest: actionableContextDigest,
         )
         try stateStore.save(state)
         return updatedBinding
@@ -1820,6 +1863,7 @@ final class WorkBatchAutoRouter {
         try bindingStore.upsert(updatedBinding)
 
         var state = try stateStore.load()
+        let actionableContextDigest = state.deliveryRecord(batchID: batchID)?.lastActionableContextDigest
         if let batchIndex = state.batches.firstIndex(where: { $0.id == batchID }) {
             let taskTitle = taskID
                 .flatMap { id in state.tasks.first(where: { $0.id == id })?.displayTitle }
@@ -1838,6 +1882,7 @@ final class WorkBatchAutoRouter {
             batchID: batchID,
             attemptedAt: now,
             kind: WorkBatchDeliveryAction.wakeExistingSession.rawValue,
+            actionableContextDigest: actionableContextDigest,
         )
         try stateStore.save(state)
         return updatedBinding
