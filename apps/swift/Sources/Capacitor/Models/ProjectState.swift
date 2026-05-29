@@ -87,10 +87,8 @@ final class ProjectState {
     func orderedGroupedProjects(
         _ projects: [Project],
         sessionStates: [String: ProjectSessionState],
-        sessionStateRevision: Int,
     ) -> (active: [Project], idle: [Project]) {
-        _ = sessionStateRevision
-        return ProjectOrdering.orderedGroupedProjects(
+        ProjectOrdering.orderedGroupedProjects(
             projects,
             order: projectOrder,
             sessionStates: sessionStates,

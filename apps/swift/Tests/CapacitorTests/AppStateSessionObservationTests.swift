@@ -65,28 +65,27 @@ final class AppStateSessionObservationTests: XCTestCase {
         wait(for: [invalidated], timeout: 0.5)
     }
 
-    func testSessionStateRevisionIncrementsWhenSessionStateChanges() {
+    func testFlashingReadInvalidatesWhenFlashingStateChanges() {
         let appState = AppState()
         appState.cancelRuntimeAutomationForTesting()
         let project = makeProject(name: "Capacitor", path: "/Users/petepetrash/Code/capacitor")
-        let initialRevision = appState.sessionStateRevision
 
-        appState.sessionStateManager.setSessionStatesForTesting([
-            project.path: ProjectSessionState(
-                state: .working,
-                stateChangedAt: "2026-02-11T17:35:32.479916+00:00",
-                updatedAt: "2026-02-11T17:35:32.479916+00:00",
-                sessionId: "session-1",
-                workingOn: nil,
-                context: nil,
-                thinking: nil,
-                hasSession: true,
-                stateSource: nil,
-                lastAuthoritativeEventAt: nil,
-            ),
+        // Proves the revision-counter deletion is safe: getSessionState /
+        // isFlashing reads are observed purely through @Observable tracking of
+        // SessionStateManager, with no manual sessionStateRevision bridge.
+        let invalidated = expectation(description: "flashing read invalidated")
+        withObservationTracking {
+            _ = appState.getSessionState(for: project)
+            _ = appState.isFlashing(project)
+        } onChange: {
+            invalidated.fulfill()
+        }
+
+        appState.sessionStateManager.setFlashingProjectsForTesting([
+            project.path: .working,
         ])
 
-        XCTAssertEqual(appState.sessionStateRevision, initialRevision + 1)
+        wait(for: [invalidated], timeout: 0.5)
     }
 
     private func makeProject(name: String, path: String) -> Project {

@@ -1890,15 +1890,22 @@ final class WorkBatchAutoRouterTests: XCTestCase {
             contextUpdatedAt: harness.now,
             deliveryGeneration: "batch-mobile:old",
         ))
-        let router = WorkBatchAutoRouter(
-            classifier: { _ in throw NSError(domain: "test", code: 1) },
-            stateStoreFactory: { _ in harness.stateStore },
-            bindingStoreFactory: { _ in harness.bindingStore },
-        )
+        func makeRouter() -> WorkBatchAutoRouter {
+            WorkBatchAutoRouter(
+                classifier: { _ in throw NSError(domain: "test", code: 1) },
+                stateStoreFactory: { _ in harness.stateStore },
+                bindingStoreFactory: { _ in harness.bindingStore },
+            )
+        }
 
-        XCTAssertTrue(router.ingestTaskClaims(projects: [harness.project], now: harness.now).isEmpty)
+        XCTAssertTrue(makeRouter().ingestTaskClaims(projects: [harness.project], now: harness.now).isEmpty)
         XCTAssertEqual(try harness.stateStore.load().tasks.first?.status, .queued)
 
+        // The router now holds a single in-memory working value as the source of
+        // truth, so an externally-applied task-status change is picked up by a
+        // freshly hydrated router (modeling a relaunch). Each phase mutates the
+        // persisted store, then a new router re-hydrates and asserts the claim
+        // guard still ignores done / needs-you claims.
         var state = try harness.stateStore.load()
         state.tasks[0].status = .done
         try harness.stateStore.save(state)
@@ -1910,13 +1917,13 @@ final class WorkBatchAutoRouterTests: XCTestCase {
             contextUpdatedAt: harness.now,
             deliveryGeneration: "batch-mobile:current",
         ))
-        XCTAssertTrue(router.ingestTaskClaims(projects: [harness.project], now: harness.now).isEmpty)
+        XCTAssertTrue(makeRouter().ingestTaskClaims(projects: [harness.project], now: harness.now).isEmpty)
         XCTAssertEqual(try harness.stateStore.load().tasks.first?.status, .done)
 
         state = try harness.stateStore.load()
         state.tasks[0].status = .needsYou
         try harness.stateStore.save(state)
-        XCTAssertTrue(router.ingestTaskClaims(projects: [harness.project], now: harness.now).isEmpty)
+        XCTAssertTrue(makeRouter().ingestTaskClaims(projects: [harness.project], now: harness.now).isEmpty)
         XCTAssertEqual(try harness.stateStore.load().tasks.first?.status, .needsYou)
     }
 

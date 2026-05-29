@@ -229,6 +229,81 @@ final class WorkBatchPreviewActionTests: XCTestCase {
         XCTAssertEqual(state.batches.first?.status, .working)
         XCTAssertEqual(state.tasks.first?.status, .working)
     }
+
+    /// Pins the Phase 3a HIGH fix: the @Observable projections cache embeds LIVE
+    /// preview state (NSRunningApplication), which can flip when the user quits
+    /// the preview app WITHOUT any store mutation. Store-mutating ops are the
+    /// only other thing that recomputes the cache, so the poll-driven
+    /// `refreshPreviewSensitiveProjections` must re-publish the projection when
+    /// the live state changes — otherwise the UI would freeze a stale "Bring
+    /// Preview Forward" / disabled state.
+    func testRefreshPreviewSensitiveProjectionsUpdatesCacheWhenPreviewStops() async throws {
+        let harness = try PreviewActionHarness()
+        try harness.seedBatch(withBinding: true)
+        try harness.makeCapacitorPreviewCapable(at: harness.worktreeRoot)
+        // Seed a ready-to-inspect preview record so the projection reflects a
+        // built, runnable preview.
+        try harness.previewStore.upsert(harness.readyPreviewRecord())
+
+        // A controllable live-preview matcher: starts "running", later flips to
+        // "not running" with no store mutation in between.
+        let liveState = PreviewLiveState(isRunning: true)
+        var projector = WorkBatchPreviewProjector(fileManager: harness.fileManager)
+        projector.isPreviewRunning = { _ in liveState.isRunning }
+        projector.isPreviewIdentityRunning = { _ in liveState.isRunning }
+
+        let router = harness.router(
+            previewRunner: { _ in throw NSError(domain: "test", code: 1) },
+            previewProjector: projector,
+        )
+
+        // Seed the @Observable projections cache via a STORE-MUTATING op
+        // (independent of the refresh method under test). In production the
+        // cache is populated this way during normal operation, which is exactly
+        // how a stale .ready can later survive a preview quit. After this the
+        // cache holds the running/ready projection.
+        _ = try router.unresolveTask(
+            project: harness.project,
+            batchID: "batch-mobile",
+            taskID: "task-mobile",
+            now: harness.now,
+        )
+
+        let runningProjections = router.projections(for: harness.project.path)
+        let runningPreview = try XCTUnwrap(runningProjections.first?.preview)
+        XCTAssertEqual(runningPreview.status, .readyToInspect)
+        XCTAssertEqual(runningPreview.actionLabel, "Bring Preview Forward")
+        XCTAssertTrue(runningPreview.isActionEnabled)
+
+        // Quit the preview app: flip the live matcher with NO store mutation.
+        liveState.isRunning = false
+
+        // The cache still holds the stale ready/running projection (cache HIT)
+        // because nothing has mutated the store. This is the freshness bug the
+        // poll-tick recompute exists to fix.
+        let staleProjections = router.projections(for: harness.project.path)
+        let stalePreview = try XCTUnwrap(staleProjections.first?.preview)
+        XCTAssertEqual(stalePreview.status, .readyToInspect)
+
+        // Drive the poll-tick recompute path (the new refresh method).
+        router.refreshPreviewSensitiveProjections(for: [harness.project.path])
+
+        // The cached projection must now reflect the available (re-enabled)
+        // state, proving the cache refreshed on the poll cadence rather than
+        // freezing the stale ready/running projection.
+        let stoppedProjections = router.projections(for: harness.project.path)
+        let stoppedPreview = try XCTUnwrap(stoppedProjections.first?.preview)
+        XCTAssertEqual(stoppedPreview.status, .previewAvailable)
+        XCTAssertEqual(stoppedPreview.actionLabel, "Open Preview")
+        XCTAssertTrue(stoppedPreview.isActionEnabled)
+    }
+}
+
+private final class PreviewLiveState: @unchecked Sendable {
+    var isRunning: Bool
+    init(isRunning: Bool) {
+        self.isRunning = isRunning
+    }
 }
 
 private final class PreviewActionHarness {
@@ -288,6 +363,7 @@ private final class PreviewActionHarness {
         previewActivator: WorkBatchAutoRouter.PreviewActivator? = nil,
         previewRunningMatcher: WorkBatchAutoRouter.PreviewRunningMatcher? = nil,
         previewSourceSnapshotLoader: WorkBatchAutoRouter.PreviewSourceSnapshotLoader? = nil,
+        previewProjector: WorkBatchPreviewProjector? = nil,
     ) -> WorkBatchAutoRouter {
         WorkBatchAutoRouter(
             stateStoreFactory: { _ in self.stateStore },
@@ -303,7 +379,7 @@ private final class PreviewActionHarness {
                     fingerprint: "fingerprint-current",
                 )
             },
-            previewProjector: WorkBatchPreviewProjector(fileManager: fileManager),
+            previewProjector: previewProjector ?? WorkBatchPreviewProjector(fileManager: fileManager),
         )
     }
 

@@ -282,13 +282,11 @@ extension AppState {
     }
 
     func getSessionState(for project: Project) -> ProjectSessionState? {
-        _ = sessionStateRevision
-        return sessionStateManager.getSessionState(for: project)
+        sessionStateManager.getSessionState(for: project)
     }
 
     func isFlashing(_ project: Project) -> SessionState? {
-        _ = sessionStateRevision
-        return sessionStateManager.isFlashing(project)
+        sessionStateManager.isFlashing(project)
     }
 
     func getProjectStatus(for project: Project) -> ProjectStatus? {
@@ -472,7 +470,6 @@ extension AppState {
         projectState.orderedGroupedProjects(
             projects,
             sessionStates: sessionStateManager.sessionStates,
-            sessionStateRevision: sessionStateRevision,
         )
     }
 
@@ -514,8 +511,11 @@ extension AppState {
     }
 
     func workBatches(for project: Project) -> [WorkBatchProjection] {
-        _ = workBatchProjectionRevision
-        return workBatchAutoRouter.projections(for: project.path)
+        // Reads the router's @Observable projections cache. Because both
+        // AppState and WorkBatchAutoRouter are @Observable, view bodies that
+        // call this track the nested cache access and re-render when the router
+        // recomputes projections after a store-mutating op.
+        workBatchAutoRouter.projections(for: project.path)
     }
 
     func workBatchContextSummary(for project: Project) -> String? {
@@ -717,13 +717,9 @@ extension AppState {
                 let record = try await workBatchAutoRouter.openPreview(
                     project: project,
                     batchID: batch.id,
-                    onRecordChanged: { [weak self] _ in
-                        self?.invalidateWorkBatchProjections()
-                    },
                 )
 
                 await MainActor.run {
-                    self.invalidateWorkBatchProjections()
                     switch record.status {
                     case .readyToInspect:
                         self.uiState.toast = ToastMessage("Preview ready")

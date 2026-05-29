@@ -63,9 +63,8 @@ struct ProjectsView: View {
     }
 
     var body: some View {
-        // Bridge nested session-state updates into this view's observation graph.
-        let _ = appState.sessionStateRevision
-        // Snapshot session state directly so this body observes per-project changes.
+        // Snapshot session state directly so this body observes per-project
+        // changes via @Observable tracking of SessionStateManager.sessionStates.
         let sessionStates = appState.sessionStateManager.sessionStates
         #if DEBUG
             let renderedProjectsForDebug = debugRenderedProjects(sessionStates: sessionStates)

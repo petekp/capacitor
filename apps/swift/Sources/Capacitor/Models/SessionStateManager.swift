@@ -869,5 +869,10 @@ final class SessionStateManager {
             pruneCachedStates()
             checkForStateChanges()
         }
+
+        /// Test-only helper to drive the flashing projection deterministically.
+        func setFlashingProjectsForTesting(_ flashing: [String: SessionState]) {
+            flashingProjects = flashing
+        }
     #endif
 }
