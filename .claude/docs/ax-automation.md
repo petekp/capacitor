@@ -50,10 +50,11 @@ Use this on machines where Accessibility trust may be unavailable. This should l
 ### Runtime suite wrapper
 
 ```bash
-bash scripts/ci/runtime-reliability.sh ci
+bash scripts/ci/runtime-reliability.sh ci   # deterministic gates: guard + replay + projection-parity
+bash scripts/ci/runtime-reliability.sh ax   # AX verifier lane
 ```
 
-This is the pre-merge operational wrapper. It already includes the AX verifier lane.
+The `ci` mode runs the deterministic blocking gates. The AX verifier lane is now a separate `ax` mode — in CI it runs as its own **advisory (non-blocking)** `ax-automation` job, so a window-server flake no longer blocks merges (the AX lane is env-fragile; see the matrix note below).
 
 ## Interface Layers
 
