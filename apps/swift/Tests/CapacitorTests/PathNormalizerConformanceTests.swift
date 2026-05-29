@@ -9,8 +9,8 @@ import XCTest
 /// of truth) and pins Swift's path-identity outputs against it so cross-language
 /// drift is LOUD.
 ///
-/// The join this guards lives at `SessionStateManager.swift:737`
-/// (Swift-recomputed `project.workspaceId` == Rust-provided `state.workspaceId`),
+/// The join this guards lives in `SessionStateManager.matchesProject`
+/// (the Rust-provided `project.workspaceId` joined against `state.workspaceId`),
 /// today rescued by path-containment fallbacks. This test makes the underlying
 /// key-derivation drift between the two languages explicit rather than hidden
 /// behind those fallbacks.

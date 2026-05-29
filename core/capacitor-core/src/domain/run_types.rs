@@ -84,7 +84,8 @@ pub enum InvolvementLevel {
 /// [`MutateRunCommand`] via the private [`MutateRunCommandWire`] DTO. We avoid
 /// `#[serde(flatten)]` + an internally-tagged enum here: that combination buffers
 /// through `serde::__private::de::Content` and is a known-fragile pattern. The
-/// explicit DTO+projection keeps the wire identical while removing that fragility.
+/// explicit DTO+projection keeps the wire FLAT and backward-compatible (every
+/// historical frame still deserializes) while removing that fragility.
 #[derive(Debug, Clone, PartialEq, Eq, uniffi::Enum)]
 pub enum RunMutationKind {
     Create {
@@ -414,8 +415,9 @@ impl RunState {
 /// internally-tagged enum: that pairing buffers every field through
 /// `serde::__private::de::Content` and is a documented-fragile pattern (it can
 /// mishandle number coercion and self-describing-format edge cases). The explicit
-/// DTO + projection keeps the wire byte-for-byte identical while removing the
-/// fragile flatten path entirely.
+/// DTO + projection keeps the wire FLAT and deserialization-compatible (every
+/// historical frame still decodes; the serialized object now carries only the
+/// active variant's payload keys) while removing the fragile flatten path entirely.
 #[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
 pub struct MutateRunCommand {
     pub project_path: String,
