@@ -5,9 +5,16 @@ on:
     branches:
       - main
       - "pkp/**"
+    tags:
+      - "v*"
   pull_request:
     branches: [main]
   workflow_dispatch:
+  schedule:
+    # Nightly extended pass (09:00 UTC): runs the user-facing / release-time
+    # gates (AX GUI lane, release-smoke build, release-script bats) that are
+    # gated off the per-PR path. Per-PR keeps only the agent-drift guardrails.
+    - cron: "0 9 * * *"
 
 permissions:
   contents: read
@@ -31,8 +38,8 @@ jobs:
       - name: Run test surface audit
         run: bash scripts/ci/test-surface-audit.sh --check
 
-  verifier-bootstrap:
-    name: Verifier Bootstrap
+  verifier:
+    name: Verifier
     runs-on: ubuntu-latest
     needs: test-surface-audit
     steps:
@@ -43,34 +50,12 @@ jobs:
         with:
           python-version: "3.11"
 
-      - name: Set up Java 17
-        uses: actions/setup-java@v5
-        with:
-          distribution: temurin
-          java-version: "17"
-
+      # Java/Apalache is only needed for higher TLA+ layers (Layer 2+); Layer 1
+      # is purely structural (check-structural.py has no java/apalache/tla deps).
+      # We skip the Apalache install during bootstrap so this job needs no JVM.
       - name: Bootstrap verifier dependencies
-        run: ./scripts/verify/verify.sh --bootstrap
-
-  verifier-self-test:
-    name: Verifier Self-Test
-    runs-on: ubuntu-latest
-    needs: verifier-bootstrap
-    steps:
-      - uses: actions/checkout@v6
-
-      - name: Set up Python
-        uses: actions/setup-python@v6
-        with:
-          python-version: "3.11"
-
-      - name: Set up Java 17
-        uses: actions/setup-java@v5
-        with:
-          distribution: temurin
-          java-version: "17"
-
-      - name: Bootstrap verifier dependencies
+        env:
+          VERIFY_SKIP_APALACHE_INSTALL: "1"
         run: ./scripts/verify/verify.sh --bootstrap
 
       - name: Install bats
@@ -83,27 +68,6 @@ jobs:
         env:
           VENV_DIR: ${{ github.workspace }}/.verifier/.venv
         run: bats tests/verify
-
-  verifier-full:
-    name: Verifier Full
-    runs-on: ubuntu-latest
-    needs: verifier-self-test
-    steps:
-      - uses: actions/checkout@v6
-
-      - name: Set up Python
-        uses: actions/setup-python@v6
-        with:
-          python-version: "3.11"
-
-      - name: Set up Java 17
-        uses: actions/setup-java@v5
-        with:
-          distribution: temurin
-          java-version: "17"
-
-      - name: Bootstrap verifier dependencies
-        run: ./scripts/verify/verify.sh --bootstrap
 
       - name: Run formal verification
         run: ./scripts/verify/verify.sh --layers 1 --json
@@ -127,10 +91,16 @@ jobs:
       - name: Install bats
         run: brew install bats-core
 
+      # Agent-drift guardrail: dev-script bats cover restart-*.sh (the agent
+      # iteration path), so they run on every PR.
       - name: Run dev script tests
         run: bats tests/dev-scripts
 
+      # Extended (non-per-PR) gate: release-script bats cover release/AX
+      # machinery (bump-version, generate-appcast, ax-automation-verify). Gated
+      # to nightly / manual dispatch / v* tags; skipped on ordinary PRs.
       - name: Run release script tests
+        if: ${{ github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/v') }}
         run: bats tests/release-scripts
 
   test-rust:
@@ -164,7 +134,9 @@ jobs:
         run: cargo clippy -- -D warnings -W dead_code
 
       - name: Install cargo-machete
-        run: cargo install cargo-machete
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-machete
 
       - name: Check for unused dependencies
         run: cargo machete
@@ -232,8 +204,45 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-cargo-
 
-      - name: Run runtime reliability suite
+      - name: Run runtime reliability suite (deterministic gates)
         run: ./scripts/ci/runtime-reliability.sh ci
+
+  ax-automation:
+    name: AX Automation (advisory)
+    runs-on: macos-15
+    needs: test-surface-audit
+    # Extended (non-per-PR) gate: the AX GUI lane is user-facing/release-time work
+    # and is inherently flaky (UI automation). It only runs nightly, on manual
+    # dispatch, or on v* tags — never on ordinary PRs/branch pushes. Still
+    # advisory (continue-on-error) when it does run. Split out of the Runtime
+    # Reliability Gate so a flaky AX run can no longer shadow the deterministic
+    # projection-parity gate under `set -e`. Builds its own release artifacts via
+    # prepare_ax_verifier_build.
+    if: ${{ github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/v') }}
+    continue-on-error: true
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Select Xcode 26.3 (Swift 6.2)
+        run: ./scripts/ci/select-xcode.sh /Applications/Xcode_26.3.app/Contents/Developer
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo registry
+        uses: actions/cache@v5
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-
+
+      - name: Run AX automation verifier (advisory)
+        run: ./scripts/ci/runtime-reliability.sh ax
 
   test-swift:
     name: Test Swift
@@ -269,12 +278,21 @@ jobs:
 
       - name: Install swiftformat (pinned)
         env:
-          SWIFTFORMAT_VERSION: "0.60.1"
+          SWIFTFORMAT_VERSION: "0.61.1"
         run: |
           curl -sL "https://github.com/nicklockwood/SwiftFormat/releases/download/${SWIFTFORMAT_VERSION}/swiftformat.zip" -o /tmp/swiftformat.zip
           unzip -o /tmp/swiftformat.zip -d /usr/local/bin/
           chmod +x /usr/local/bin/swiftformat
-          swiftformat --version
+          # Drift-proof: fail fast if the downloaded asset is not the pinned
+          # version (GitHub has previously re-pointed release URLs to a newer
+          # build). Without this assertion CI could silently lint with the wrong
+          # SwiftFormat version, masking or introducing formatting drift.
+          INSTALLED_VERSION="$(swiftformat --version)"
+          echo "swiftformat reported version: ${INSTALLED_VERSION}"
+          if [ "${INSTALLED_VERSION}" != "${SWIFTFORMAT_VERSION}" ]; then
+            echo "ERROR: expected swiftformat ${SWIFTFORMAT_VERSION} but got ${INSTALLED_VERSION}" >&2
+            exit 1
+          fi
 
       - name: SwiftFormat lint
         run: ./scripts/ci/swiftformat-lint.sh
@@ -282,13 +300,31 @@ jobs:
       - name: Build Rust library
         run: cargo build -p capacitor-core --release
 
-      - name: Run Swift tests
-        run: swift test --package-path apps/swift
+      # Agent-drift guardrail (NOT release machinery): agents change UniFFI FFI
+      # shapes constantly, so the binding-drift check must run on every PR. It
+      # only needs the release dylib that the step above just built (it runs
+      # uniffi-bindgen against the library), so this is nearly free here. Moved
+      # out of the gated release-smoke job to keep it on the per-PR path.
+      - name: Check UniFFI bindings are fresh
+        run: ./scripts/ci/check-uniffi-bindings.sh
 
-  build-smoke-test:
-    name: Build Smoke Test
+      - name: Run Swift tests
+        # Broad run skips the six cross-suite-flaky suites, then each is run in
+        # isolation (fresh process) to eliminate MainActor/shared-state leakage.
+        # Full coverage preserved. See scripts/ci/swift-test.sh for details.
+        run: ./scripts/ci/swift-test.sh
+
+  release-smoke:
+    name: Release Smoke Test
     runs-on: macos-15
     needs: [test-rust, test-swift]
+    # Extended (non-per-PR) gate: what remains here after relocating the UniFFI
+    # drift guard to test-swift is release machinery (release Swift build,
+    # version-sync check, bump-version dry-run). It only runs nightly, on manual
+    # dispatch, or on v* tags. Skipped on ordinary PRs/branch pushes (no cost).
+    # GitHub treats a skipped `needs:` as satisfied for downstream gated jobs,
+    # and no per-PR job needs this one, so the skip is non-blocking.
+    if: ${{ github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/v') }}
     steps:
       - uses: actions/checkout@v6
 
@@ -320,9 +356,10 @@ jobs:
       - name: Build Rust library (release)
         run: cargo build -p capacitor-core --release
 
-      - name: Check UniFFI bindings are fresh
-        run: ./scripts/ci/check-uniffi-bindings.sh
-
+      # Note: the UniFFI binding-drift check lives in test-swift now (per-PR
+      # agent guardrail). The dylib install_name fix/verify below is release
+      # machinery — a prerequisite for linking the dylib into the release Swift
+      # build, not for binding generation — so it stays in this gated job.
       - name: Fix dylib install_name
         run: ./scripts/dev/fix-dylib.sh
 

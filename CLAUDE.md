@@ -41,7 +41,8 @@ cargo test                        # Test
 # AX automation
 bash scripts/ci/ax-automation-verify.sh --runs 1 --skip-details
 bash scripts/ci/ax-automation-verify.sh --runs 3 --require-log-health
-bash scripts/ci/runtime-reliability.sh ci    # Includes AX verifier lane in the runtime suite
+bash scripts/ci/runtime-reliability.sh ci    # Deterministic gates only (guard + replay + projection-parity)
+bash scripts/ci/runtime-reliability.sh ax    # AX verifier lane (advisory / non-blocking job in CI)
 
 # Advanced launch/build control:
 ./scripts/dev/restart-app.sh --force     # Full Rust + UniFFI + Swift rebuild and relaunch

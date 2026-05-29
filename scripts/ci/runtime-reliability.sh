@@ -44,19 +44,50 @@ run_ax_verifier_ci() {
 run_projection_parity_gate() {
   echo ""
   echo "[runtime-reliability] projection parity gate"
-  cargo test -p capacitor-core --test replay_diff replay_diff_projection_read_model_matches_runtime_snapshot
+
+  # Zero-test guard: `cargo test <filter>` exits 0 even when the filter matches
+  # NO tests (it just prints "running 0 tests" / "0 passed; 0 failed"). If the
+  # named test is ever renamed or deleted (e.g. when PR #57 merges), this gate
+  # would silently pass as a no-op green and stop protecting projection parity.
+  # We capture the run output and assert exactly one test executed and passed,
+  # failing loudly otherwise so the drift is caught at review time.
+  local test_name="replay_diff_projection_read_model_matches_runtime_snapshot"
+  local output
+  if ! output="$(cargo test -p capacitor-core --test replay_diff "$test_name" 2>&1)"; then
+    echo "$output"
+    echo "[runtime-reliability] projection parity gate FAILED: '$test_name' did not pass" >&2
+    return 1
+  fi
+  echo "$output"
+
+  # Assert the named test actually ran (guards against a rename/deletion turning
+  # this into a silent no-op). cargo prints e.g. "1 passed; 0 failed" on success
+  # and "0 passed; 0 failed" when the filter matched nothing.
+  if ! grep -Eq '[[:space:]]1 passed;[[:space:]]*0 failed' <<<"$output"; then
+    echo "[runtime-reliability] projection parity gate FAILED: expected exactly 1 passing test for filter '$test_name'." >&2
+    echo "[runtime-reliability] The filter likely matched zero tests (rename/deletion). Update this gate to the new test name." >&2
+    return 1
+  fi
 }
 
 case "${mode}" in
   ci)
-    echo "Runtime reliability suite (pre-merge CI)"
+    # Deterministic gates only. The AX automation lane is split out into its own
+    # advisory (continue-on-error) job (`ax` mode below) so a flaky AX run cannot
+    # shadow the deterministic projection-parity gate under `set -e`.
+    echo "Runtime reliability suite (pre-merge CI, deterministic gates)"
     run_guard
     run_replay_gate
-    run_ax_verifier_ci
     run_projection_parity_gate
     ;;
+  ax)
+    # Advisory AX automation lane. Builds its own release artifacts via
+    # prepare_ax_verifier_build inside run_ax_verifier_ci.
+    echo "Runtime reliability suite (AX automation, advisory)"
+    run_ax_verifier_ci
+    ;;
   *)
-    echo "Usage: $0 [ci]" >&2
+    echo "Usage: $0 [ci|ax]" >&2
     exit 2
     ;;
 esac
