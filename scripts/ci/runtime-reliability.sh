@@ -41,44 +41,17 @@ run_ax_verifier_ci() {
     --artifacts-dir artifacts/ax-automation-verification/ci
 }
 
-run_projection_parity_gate() {
-  echo ""
-  echo "[runtime-reliability] projection parity gate"
-
-  # Zero-test guard: `cargo test <filter>` exits 0 even when the filter matches
-  # NO tests (it just prints "running 0 tests" / "0 passed; 0 failed"). If the
-  # named test is ever renamed or deleted (e.g. when PR #57 merges), this gate
-  # would silently pass as a no-op green and stop protecting projection parity.
-  # We capture the run output and assert exactly one test executed and passed,
-  # failing loudly otherwise so the drift is caught at review time.
-  local test_name="replay_diff_projection_read_model_matches_runtime_snapshot"
-  local output
-  if ! output="$(cargo test -p capacitor-core --test replay_diff "$test_name" 2>&1)"; then
-    echo "$output"
-    echo "[runtime-reliability] projection parity gate FAILED: '$test_name' did not pass" >&2
-    return 1
-  fi
-  echo "$output"
-
-  # Assert the named test actually ran (guards against a rename/deletion turning
-  # this into a silent no-op). cargo prints e.g. "1 passed; 0 failed" on success
-  # and "0 passed; 0 failed" when the filter matched nothing.
-  if ! grep -Eq '[[:space:]]1 passed;[[:space:]]*0 failed' <<<"$output"; then
-    echo "[runtime-reliability] projection parity gate FAILED: expected exactly 1 passing test for filter '$test_name'." >&2
-    echo "[runtime-reliability] The filter likely matched zero tests (rename/deletion). Update this gate to the new test name." >&2
-    return 1
-  fi
-}
-
 case "${mode}" in
   ci)
     # Deterministic gates only. The AX automation lane is split out into its own
     # advisory (continue-on-error) job (`ax` mode below) so a flaky AX run cannot
-    # shadow the deterministic projection-parity gate under `set -e`.
+    # shadow these deterministic gates under `set -e`.
+    # (The projection-parity gate was removed here: the Hickey teardown deleted the
+    # dead projection/observation_journal scaffold and its replay_diff parity test,
+    # so there is no longer a projection read-model to assert parity against.)
     echo "Runtime reliability suite (pre-merge CI, deterministic gates)"
     run_guard
     run_replay_gate
-    run_projection_parity_gate
     ;;
   ax)
     # Advisory AX automation lane. Builds its own release artifacts via

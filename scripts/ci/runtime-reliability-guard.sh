@@ -172,7 +172,6 @@ check_file_contains "Runtime reliability defines AX verifier ci lane" "scripts/c
 check_file_contains "Runtime reliability prepares AX release build" "scripts/ci/runtime-reliability.sh" 'cargo build -p capacitor-core -p hud-hook --release'
 check_file_contains "Runtime reliability skips setup validation for AX lane" "scripts/ci/runtime-reliability.sh" 'CAPACITOR_SKIP_SETUP_VALIDATION=1'
 check_file_contains "AX contract ship checklist references verifier" "docs/plans/ax-automation-contract/SHIP_CHECKLIST.md" 'scripts/ci/ax-automation-verify.sh'
-check_file_contains "Runtime reliability wraps projection parity gate" "scripts/ci/runtime-reliability.sh" 'replay_diff_projection_read_model_matches_runtime_snapshot'
 
 echo ""
 echo "═══════════════════════════════════════════════════════════════"
