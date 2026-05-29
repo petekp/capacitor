@@ -105,7 +105,6 @@ final class WorkBatchAutoRouter {
     typealias StateStoreFactory = (String) -> WorkBatchStateStore
     typealias BindingStoreFactory = (String) -> WorkBatchCockpitBindingStore
     typealias PreviewStoreFactory = (String) -> WorkBatchPreviewStateStore
-    typealias ProcessSessionLookup = WorkBatchBindingReconciler.ProcessSessionLookup
     typealias SafeWakeBoundaryLookup = (WorkBatchCockpitBinding) -> Bool
     typealias PreviewRunner = (MacOSPreviewWorkRequest) async throws -> MacOSPreviewWorkProof
     typealias PreviewActivator = (WorkBatchPreviewRecord) -> Bool
@@ -117,7 +116,6 @@ final class WorkBatchAutoRouter {
     @ObservationIgnored private let bindingStoreFactory: BindingStoreFactory
     @ObservationIgnored private let previewStoreFactory: PreviewStoreFactory
     @ObservationIgnored private let taskSessionCoordinator: WorkBatchTaskSessionCoordinator
-    @ObservationIgnored private let processSessionIDs: ProcessSessionLookup
     @ObservationIgnored private let safeWakeBoundaryAllowsInputOverride: SafeWakeBoundaryLookup?
     @ObservationIgnored private let previewRunner: PreviewRunner
     @ObservationIgnored private let previewActivator: PreviewActivator
@@ -145,7 +143,6 @@ final class WorkBatchAutoRouter {
         bindingStoreFactory: BindingStoreFactory? = nil,
         previewStoreFactory: PreviewStoreFactory? = nil,
         taskSessionCoordinator: WorkBatchTaskSessionCoordinator? = nil,
-        processSessionIDs: ProcessSessionLookup? = nil,
         safeWakeBoundaryAllowsInput: SafeWakeBoundaryLookup? = nil,
         previewRunner: PreviewRunner? = nil,
         previewActivator: PreviewActivator? = nil,
@@ -154,7 +151,6 @@ final class WorkBatchAutoRouter {
         previewProjector: WorkBatchPreviewProjector = WorkBatchPreviewProjector(),
     ) {
         let defaultClassifier = ClaudeWorkBatchClassifier()
-        let processScanner = WorkBatchClaudeProcessScanner()
         let previewCoordinator = MacOSPreviewWorkCoordinator()
         let previewActivity = WorkBatchPreviewAppActivity()
         self.classifier = classifier ?? { request in
@@ -170,9 +166,6 @@ final class WorkBatchAutoRouter {
             WorkBatchPreviewStateStore(projectPath: projectPath)
         }
         self.taskSessionCoordinator = taskSessionCoordinator ?? WorkBatchTaskSessionCoordinator()
-        self.processSessionIDs = processSessionIDs ?? { binding in
-            processScanner.sessionIDs(inWorktree: binding.worktreePath)
-        }
         // New Work Batch delivery keeps the legacy Ghostty text-input path
         // behind a proven safe boundary. Tests may inject an override, but
         // production derives this from reducer-backed runtime session state.
@@ -1031,7 +1024,11 @@ final class WorkBatchAutoRouter {
             if hasBlockingDuplicateCockpitIssue(for: binding, in: result.issues) {
                 throw WorkBatchAutoRouterError.duplicateCockpit(batchName: binding.batchName)
             }
-            focusOnlyExistingProcess = hasAssignedSessionProcessDuplicateIssue(for: binding, in: result.issues)
+            // Same-session OS-process duplicate detection was RETIRED in C5, so
+            // there is no longer a "focus the one existing process" path: a
+            // duplicateCockpit is always a FOREIGN-session ambiguity (handled by
+            // the blocking gate above via sessionIDs).
+            focusOnlyExistingProcess = false
             currentBinding = result.bindings.first(where: { $0.batchID == binding.batchID }) ?? binding
         }
 
@@ -1600,33 +1597,11 @@ final class WorkBatchAutoRouter {
             guard issue.batchID == binding.batchID, issue.kind == .duplicateCockpit else {
                 return false
             }
-            // New Work Batch cockpit behavior: two processes attached to the
-            // same assigned Claude session are a delivery risk, but manual
-            // re-entry should still focus that cockpit. Different session IDs
-            // in the same worktree are still ambiguous and must block.
-            return issue.sessionIDs.contains {
-                isForeignDuplicateSessionID($0, assignedSessionID: binding.claudeSessionID)
-            }
+            // A FOREIGN Claude session id in the same worktree is ambiguous and
+            // must block re-entry. (Same-session OS-process duplicate detection
+            // was RETIRED in C5; only foreign session ids land here.)
+            return issue.sessionIDs.contains { $0 != binding.claudeSessionID }
         }
-    }
-
-    private func hasAssignedSessionProcessDuplicateIssue(
-        for binding: WorkBatchCockpitBinding,
-        in issues: [WorkBatchBindingReconciliationIssue],
-    ) -> Bool {
-        issues.contains { issue in
-            issue.batchID == binding.batchID &&
-                issue.kind == .duplicateCockpit &&
-                issue.sessionIDs.contains(assignedSessionDuplicateProcessMarker(binding.claudeSessionID))
-        }
-    }
-
-    private func isForeignDuplicateSessionID(_ sessionID: String, assignedSessionID: String) -> Bool {
-        sessionID != assignedSessionID && sessionID != assignedSessionDuplicateProcessMarker(assignedSessionID)
-    }
-
-    private func assignedSessionDuplicateProcessMarker(_ assignedSessionID: String) -> String {
-        "\(assignedSessionID) (duplicate process)"
     }
 
     private func duplicateCockpitAttentionReason(
@@ -1634,14 +1609,10 @@ final class WorkBatchAutoRouter {
         batchID: String,
         issues: [WorkBatchBindingReconciliationIssue],
     ) -> WorkBatchAttentionReason {
-        guard let binding,
-              binding.batchID == batchID,
-              hasAssignedSessionProcessDuplicateIssue(for: binding, in: issues),
-              !hasBlockingDuplicateCockpitIssue(for: binding, in: issues)
-        else {
-            return .duplicateCockpit(assignedProcessDuplicate: false)
-        }
-        return .duplicateCockpit(assignedProcessDuplicate: true)
+        // Same-session OS-process duplicate detection was RETIRED in C5: the
+        // runtime tracks one PID per session id, so a duplicateCockpit is always
+        // a FOREIGN-session ambiguity.
+        .duplicateCockpit
     }
 
     @discardableResult
@@ -1847,10 +1818,12 @@ final class WorkBatchAutoRouter {
     }
 
     private func exactLiveSessionExists(for binding: WorkBatchCockpitBinding) -> Bool {
-        if processSessionIDs(binding).contains(binding.claudeSessionID) {
+        guard hasRuntimeSessionSnapshot else { return false }
+        if latestRuntimeSessions.contains(where: { session in
+            runtimeSessionIsProcessBackedExactCockpit(session, binding: binding)
+        }) {
             return true
         }
-        guard hasRuntimeSessionSnapshot else { return false }
         return latestRuntimeSessions.contains { session in
             runtimeSessionMatchesBinding(session, binding: binding) ||
                 runtimeSessionIsSignalAbsenceReadyBoundary(session, binding: binding)
@@ -1875,14 +1848,20 @@ final class WorkBatchAutoRouter {
             return true
         }
 
-        let processSessionIDs = processSessionIDs(binding)
         return latestRuntimeSessions.contains { session in
-            runtimeSessionIsProcessBackedAwaitingInputBoundary(
-                session,
-                binding: binding,
-                processSessionIDs: processSessionIDs,
-            )
+            runtimeSessionIsProcessBackedAwaitingInputBoundary(session, binding: binding)
         }
+    }
+
+    /// The exact assigned Claude cockpit, proven alive by the OS-liveness sweep
+    /// (`osProcessAlive == true`, DISTINCT from event-decay `isAlive`), sitting
+    /// inside the Batch Worktree. This replaces the former `/bin/ps` + lsof scan.
+    private func runtimeSessionIsProcessBackedExactCockpit(
+        _ session: RuntimeSession,
+        binding: WorkBatchCockpitBinding,
+    ) -> Bool {
+        session.osProcessAlive == true &&
+            runtimeSessionPathAndIDMatchBinding(session, binding: binding)
     }
 
     private func runtimeSessionMatchesBinding(
@@ -1927,17 +1906,17 @@ final class WorkBatchAutoRouter {
             session.gcReason == "signal_absence"
     }
 
-    /// New Work Batch path: the reducer can lose PID confidence for an old
-    /// session while a direct process scan still proves the exact assigned
-    /// Claude cockpit is alive in the Batch Worktree. If that stale snapshot
-    /// also says Claude was awaiting input and no tools are running, the tiny
-    /// task-refresh wake is still the least surprising product behavior.
+    /// New Work Batch path: the reducer can lose event-decay confidence for an
+    /// old session while the OS-liveness sweep still proves the exact assigned
+    /// Claude cockpit is alive in the Batch Worktree (`osProcessAlive == true`,
+    /// DISTINCT from `isAlive`). If that stale snapshot also says Claude was
+    /// awaiting input and no tools are running, the tiny task-refresh wake is
+    /// still the least surprising product behavior.
     private func runtimeSessionIsProcessBackedAwaitingInputBoundary(
         _ session: RuntimeSession,
         binding: WorkBatchCockpitBinding,
-        processSessionIDs: [String],
     ) -> Bool {
-        processSessionIDs.contains(binding.claudeSessionID) &&
+        session.osProcessAlive == true &&
             runtimeSessionPathAndIDMatchBinding(session, binding: binding) &&
             session.gcReason == "signal_absence" &&
             session.toolsInFlight == 0 &&
@@ -2307,7 +2286,6 @@ final class WorkBatchAutoRouter {
             bindings: bindings,
             sessions: sessions,
             now: now,
-            processSessionIDs: processSessionIDs,
         )
         if result.state != state {
             commitWorkingState(result.state, for: projectPath)

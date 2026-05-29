@@ -541,6 +541,13 @@ public protocol CoreRuntimeProtocol: AnyObject {
 
     func ingestHookEvent(command: IngestHookEventCommand) throws -> MutationOutcome
 
+    /**
+     * Pure OS-liveness ingest. The caller (hud-hook sweep) owns the sysinfo
+     * probe and supplies the per-PID facts; this path only records them onto
+     * matching sessions via the pure reducer. It performs no OS calls itself.
+     */
+    func ingestOsLiveness(command: IngestOsLivenessCommand) throws -> MutationOutcome
+
     func ingestShellSignal(command: IngestShellSignalCommand) throws -> MutationOutcome
 
     func installHookBinaryFromPath(sourcePath: String) throws -> InstallResult
@@ -751,6 +758,18 @@ open class CoreRuntime:
         return try FfiConverterTypeMutationOutcome.lift(rustCallWithError(FfiConverterTypeCoreRuntimeError.lift) {
             uniffi_capacitor_core_fn_method_coreruntime_ingest_hook_event(self.uniffiClonePointer(),
                                                                           FfiConverterTypeIngestHookEventCommand.lower(command), $0)
+        })
+    }
+
+    /**
+     * Pure OS-liveness ingest. The caller (hud-hook sweep) owns the sysinfo
+     * probe and supplies the per-PID facts; this path only records them onto
+     * matching sessions via the pure reducer. It performs no OS calls itself.
+     */
+    open func ingestOsLiveness(command: IngestOsLivenessCommand) throws -> MutationOutcome {
+        return try FfiConverterTypeMutationOutcome.lift(rustCallWithError(FfiConverterTypeCoreRuntimeError.lift) {
+            uniffi_capacitor_core_fn_method_coreruntime_ingest_os_liveness(self.uniffiClonePointer(),
+                                                                           FfiConverterTypeIngestOsLivenessCommand.lower(command), $0)
         })
     }
 
@@ -3247,6 +3266,73 @@ public func FfiConverterTypeIngestHookEventCommand_lower(_ value: IngestHookEven
     return FfiConverterTypeIngestHookEventCommand.lower(value)
 }
 
+/**
+ * Pure OS-liveness ingest command. Built entirely by the hud-hook sweep (which
+ * owns the sysinfo probe); the reducer that consumes it performs NO OS calls —
+ * it only records the provided facts onto matching sessions. This keeps the
+ * reducer replay-deterministic and FS/OS-free.
+ */
+public struct IngestOsLivenessCommand {
+    public var entries: [OsLivenessEntry]
+    public var recordedAt: String
+
+    /// Default memberwise initializers are never public by default, so we
+    /// declare one manually.
+    public init(entries: [OsLivenessEntry], recordedAt: String) {
+        self.entries = entries
+        self.recordedAt = recordedAt
+    }
+}
+
+extension IngestOsLivenessCommand: Equatable, Hashable {
+    public static func == (lhs: IngestOsLivenessCommand, rhs: IngestOsLivenessCommand) -> Bool {
+        if lhs.entries != rhs.entries {
+            return false
+        }
+        if lhs.recordedAt != rhs.recordedAt {
+            return false
+        }
+        return true
+    }
+
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(entries)
+        hasher.combine(recordedAt)
+    }
+}
+
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeIngestOsLivenessCommand: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> IngestOsLivenessCommand {
+        return
+            try IngestOsLivenessCommand(
+                entries: FfiConverterSequenceTypeOsLivenessEntry.read(from: &buf),
+                recordedAt: FfiConverterString.read(from: &buf)
+            )
+    }
+
+    public static func write(_ value: IngestOsLivenessCommand, into buf: inout [UInt8]) {
+        FfiConverterSequenceTypeOsLivenessEntry.write(value.entries, into: &buf)
+        FfiConverterString.write(value.recordedAt, into: &buf)
+    }
+}
+
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+public func FfiConverterTypeIngestOsLivenessCommand_lift(_ buf: RustBuffer) throws -> IngestOsLivenessCommand {
+    return try FfiConverterTypeIngestOsLivenessCommand.lift(buf)
+}
+
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+public func FfiConverterTypeIngestOsLivenessCommand_lower(_ value: IngestOsLivenessCommand) -> RustBuffer {
+    return FfiConverterTypeIngestOsLivenessCommand.lower(value)
+}
+
 public struct IngestShellSignalCommand {
     public var pid: UInt32
     public var cwd: String
@@ -3256,11 +3342,23 @@ public struct IngestShellSignalCommand {
     public var tmuxClientTty: String?
     public var tmuxPane: String?
     public var tmuxPanes: [TmuxPaneInfo]
+    /**
+     * OS process start time (epoch seconds) for `pid`. Plumbed from hud-hook's
+     * already-captured `proc_start` so the reducer can store it on the session
+     * for PID-reuse defense during OS-liveness sweeps.
+     */
+    public var procStart: UInt64?
     public var recordedAt: String
 
     /// Default memberwise initializers are never public by default, so we
     /// declare one manually.
-    public init(pid: UInt32, cwd: String, tty: String, parentApp: String, tmuxSession: String?, tmuxClientTty: String?, tmuxPane: String?, tmuxPanes: [TmuxPaneInfo], recordedAt: String) {
+    public init(pid: UInt32, cwd: String, tty: String, parentApp: String, tmuxSession: String?, tmuxClientTty: String?, tmuxPane: String?, tmuxPanes: [TmuxPaneInfo],
+                /* 
+                    * OS process start time (epoch seconds) for `pid`. Plumbed from hud-hook's
+                    * already-captured `proc_start` so the reducer can store it on the session
+                    * for PID-reuse defense during OS-liveness sweeps.
+                    */ procStart: UInt64?, recordedAt: String)
+    {
         self.pid = pid
         self.cwd = cwd
         self.tty = tty
@@ -3269,6 +3367,7 @@ public struct IngestShellSignalCommand {
         self.tmuxClientTty = tmuxClientTty
         self.tmuxPane = tmuxPane
         self.tmuxPanes = tmuxPanes
+        self.procStart = procStart
         self.recordedAt = recordedAt
     }
 }
@@ -3299,6 +3398,9 @@ extension IngestShellSignalCommand: Equatable, Hashable {
         if lhs.tmuxPanes != rhs.tmuxPanes {
             return false
         }
+        if lhs.procStart != rhs.procStart {
+            return false
+        }
         if lhs.recordedAt != rhs.recordedAt {
             return false
         }
@@ -3314,6 +3416,7 @@ extension IngestShellSignalCommand: Equatable, Hashable {
         hasher.combine(tmuxClientTty)
         hasher.combine(tmuxPane)
         hasher.combine(tmuxPanes)
+        hasher.combine(procStart)
         hasher.combine(recordedAt)
     }
 }
@@ -3333,6 +3436,7 @@ public struct FfiConverterTypeIngestShellSignalCommand: FfiConverterRustBuffer {
                 tmuxClientTty: FfiConverterOptionString.read(from: &buf),
                 tmuxPane: FfiConverterOptionString.read(from: &buf),
                 tmuxPanes: FfiConverterSequenceTypeTmuxPaneInfo.read(from: &buf),
+                procStart: FfiConverterOptionUInt64.read(from: &buf),
                 recordedAt: FfiConverterString.read(from: &buf)
             )
     }
@@ -3346,6 +3450,7 @@ public struct FfiConverterTypeIngestShellSignalCommand: FfiConverterRustBuffer {
         FfiConverterOptionString.write(value.tmuxClientTty, into: &buf)
         FfiConverterOptionString.write(value.tmuxPane, into: &buf)
         FfiConverterSequenceTypeTmuxPaneInfo.write(value.tmuxPanes, into: &buf)
+        FfiConverterOptionUInt64.write(value.procStart, into: &buf)
         FfiConverterString.write(value.recordedAt, into: &buf)
     }
 }
@@ -4130,6 +4235,96 @@ public func FfiConverterTypeNewProjectRequest_lift(_ buf: RustBuffer) throws -> 
 #endif
 public func FfiConverterTypeNewProjectRequest_lower(_ value: NewProjectRequest) -> RustBuffer {
     return FfiConverterTypeNewProjectRequest.lower(value)
+}
+
+/**
+ * A single per-PID OS-liveness observation produced by the hud-hook sweep.
+ * The reducer matches `pid` against tracked sessions and, when
+ * `process_start_time` is present, requires it to equal the session's stored
+ * `process_start_time` (PID-reuse defense) before recording `alive`.
+ */
+public struct OsLivenessEntry {
+    public var pid: UInt32
+    /**
+     * OS start time (epoch seconds) of the live process observed at `pid`.
+     * `None` when the process was absent (then `alive` is false anyway).
+     */
+    public var processStartTime: UInt64?
+    /**
+     * Whether a live OS process was observed at `pid` during the sweep.
+     */
+    public var alive: Bool
+
+    /// Default memberwise initializers are never public by default, so we
+    /// declare one manually.
+    public init(pid: UInt32,
+                /* 
+                    * OS start time (epoch seconds) of the live process observed at `pid`.
+                    * `None` when the process was absent (then `alive` is false anyway).
+                    */ processStartTime: UInt64?,
+                /* 
+                    * Whether a live OS process was observed at `pid` during the sweep.
+                    */ alive: Bool)
+    {
+        self.pid = pid
+        self.processStartTime = processStartTime
+        self.alive = alive
+    }
+}
+
+extension OsLivenessEntry: Equatable, Hashable {
+    public static func == (lhs: OsLivenessEntry, rhs: OsLivenessEntry) -> Bool {
+        if lhs.pid != rhs.pid {
+            return false
+        }
+        if lhs.processStartTime != rhs.processStartTime {
+            return false
+        }
+        if lhs.alive != rhs.alive {
+            return false
+        }
+        return true
+    }
+
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(pid)
+        hasher.combine(processStartTime)
+        hasher.combine(alive)
+    }
+}
+
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeOsLivenessEntry: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> OsLivenessEntry {
+        return
+            try OsLivenessEntry(
+                pid: FfiConverterUInt32.read(from: &buf),
+                processStartTime: FfiConverterOptionUInt64.read(from: &buf),
+                alive: FfiConverterBool.read(from: &buf)
+            )
+    }
+
+    public static func write(_ value: OsLivenessEntry, into buf: inout [UInt8]) {
+        FfiConverterUInt32.write(value.pid, into: &buf)
+        FfiConverterOptionUInt64.write(value.processStartTime, into: &buf)
+        FfiConverterBool.write(value.alive, into: &buf)
+    }
+}
+
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+public func FfiConverterTypeOsLivenessEntry_lift(_ buf: RustBuffer) throws -> OsLivenessEntry {
+    return try FfiConverterTypeOsLivenessEntry.lift(buf)
+}
+
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+public func FfiConverterTypeOsLivenessEntry_lower(_ value: OsLivenessEntry) -> RustBuffer {
+    return FfiConverterTypeOsLivenessEntry.lower(value)
 }
 
 public struct PhaseInstance {
@@ -6039,10 +6234,41 @@ public struct SessionSummary {
     public var lastAuthoritativeEventAt: String?
     public var isAlive: Bool
     public var gcReason: String?
+    /**
+     * OS process start time (epoch seconds) captured when the shell signal was
+     * first observed. Used to defend the OS-liveness probe against PID reuse:
+     * a swept process whose start time differs is NOT the same process. `None`
+     * when never observed (e.g. transcript-reconstructed sessions). Distinct
+     * from `updated_at`/event timestamps — this is the OS process's birth time.
+     */
+    public var processStartTime: UInt64?
+    /**
+     * OS-probed liveness fact: `Some(true)` if a live OS process matching this
+     * session's `pid` (and `process_start_time`) was observed by the most
+     * recent hud-hook sweep, `Some(false)` if it was checked and absent.
+     * `None` means NOT-YET-PROBED and MUST be treated as UNKNOWN by consumers,
+     * never as dead. This is DISTINCT from `is_alive` (event-decay liveness).
+     */
+    public var osProcessAlive: Bool?
 
     /// Default memberwise initializers are never public by default, so we
     /// declare one manually.
-    public init(sessionId: String, pid: UInt32, cwd: String, projectId: String, projectPath: String, workspaceId: String, state: SessionState, stateChangedAt: String, updatedAt: String, lastEvent: String?, lastActivityAt: String?, terminatedAt: String?, toolsInFlight: UInt32, stateSource: StateSource?, lastAuthoritativeEventAt: String?, isAlive: Bool, gcReason: String?) {
+    public init(sessionId: String, pid: UInt32, cwd: String, projectId: String, projectPath: String, workspaceId: String, state: SessionState, stateChangedAt: String, updatedAt: String, lastEvent: String?, lastActivityAt: String?, terminatedAt: String?, toolsInFlight: UInt32, stateSource: StateSource?, lastAuthoritativeEventAt: String?, isAlive: Bool, gcReason: String?,
+                /* 
+                    * OS process start time (epoch seconds) captured when the shell signal was
+                    * first observed. Used to defend the OS-liveness probe against PID reuse:
+                    * a swept process whose start time differs is NOT the same process. `None`
+                    * when never observed (e.g. transcript-reconstructed sessions). Distinct
+                    * from `updated_at`/event timestamps — this is the OS process's birth time.
+                    */ processStartTime: UInt64?,
+                /* 
+                    * OS-probed liveness fact: `Some(true)` if a live OS process matching this
+                    * session's `pid` (and `process_start_time`) was observed by the most
+                    * recent hud-hook sweep, `Some(false)` if it was checked and absent.
+                    * `None` means NOT-YET-PROBED and MUST be treated as UNKNOWN by consumers,
+                    * never as dead. This is DISTINCT from `is_alive` (event-decay liveness).
+                    */ osProcessAlive: Bool?)
+    {
         self.sessionId = sessionId
         self.pid = pid
         self.cwd = cwd
@@ -6060,6 +6286,8 @@ public struct SessionSummary {
         self.lastAuthoritativeEventAt = lastAuthoritativeEventAt
         self.isAlive = isAlive
         self.gcReason = gcReason
+        self.processStartTime = processStartTime
+        self.osProcessAlive = osProcessAlive
     }
 }
 
@@ -6116,6 +6344,12 @@ extension SessionSummary: Equatable, Hashable {
         if lhs.gcReason != rhs.gcReason {
             return false
         }
+        if lhs.processStartTime != rhs.processStartTime {
+            return false
+        }
+        if lhs.osProcessAlive != rhs.osProcessAlive {
+            return false
+        }
         return true
     }
 
@@ -6137,6 +6371,8 @@ extension SessionSummary: Equatable, Hashable {
         hasher.combine(lastAuthoritativeEventAt)
         hasher.combine(isAlive)
         hasher.combine(gcReason)
+        hasher.combine(processStartTime)
+        hasher.combine(osProcessAlive)
     }
 }
 
@@ -6163,7 +6399,9 @@ public struct FfiConverterTypeSessionSummary: FfiConverterRustBuffer {
                 stateSource: FfiConverterOptionTypeStateSource.read(from: &buf),
                 lastAuthoritativeEventAt: FfiConverterOptionString.read(from: &buf),
                 isAlive: FfiConverterBool.read(from: &buf),
-                gcReason: FfiConverterOptionString.read(from: &buf)
+                gcReason: FfiConverterOptionString.read(from: &buf),
+                processStartTime: FfiConverterOptionUInt64.read(from: &buf),
+                osProcessAlive: FfiConverterOptionBool.read(from: &buf)
             )
     }
 
@@ -6185,6 +6423,8 @@ public struct FfiConverterTypeSessionSummary: FfiConverterRustBuffer {
         FfiConverterOptionString.write(value.lastAuthoritativeEventAt, into: &buf)
         FfiConverterBool.write(value.isAlive, into: &buf)
         FfiConverterOptionString.write(value.gcReason, into: &buf)
+        FfiConverterOptionUInt64.write(value.processStartTime, into: &buf)
+        FfiConverterOptionBool.write(value.osProcessAlive, into: &buf)
     }
 }
 
@@ -6297,11 +6537,23 @@ public struct ShellSignal {
     public var tmuxClientTty: String?
     public var tmuxPane: String?
     public var tmuxPanes: [TmuxPaneInfo]
+    /**
+     * OS process start time (epoch seconds) for `pid`, captured at signal
+     * time. Carried so the reducer can persist it onto the matching session
+     * for PID-reuse-safe OS-liveness probing. `None` when unavailable.
+     */
+    public var procStart: UInt64?
     public var updatedAt: String
 
     /// Default memberwise initializers are never public by default, so we
     /// declare one manually.
-    public init(pid: UInt32, cwd: String, tty: String, parentApp: String, tmuxSession: String?, tmuxClientTty: String?, tmuxPane: String?, tmuxPanes: [TmuxPaneInfo], updatedAt: String) {
+    public init(pid: UInt32, cwd: String, tty: String, parentApp: String, tmuxSession: String?, tmuxClientTty: String?, tmuxPane: String?, tmuxPanes: [TmuxPaneInfo],
+                /* 
+                    * OS process start time (epoch seconds) for `pid`, captured at signal
+                    * time. Carried so the reducer can persist it onto the matching session
+                    * for PID-reuse-safe OS-liveness probing. `None` when unavailable.
+                    */ procStart: UInt64?, updatedAt: String)
+    {
         self.pid = pid
         self.cwd = cwd
         self.tty = tty
@@ -6310,6 +6562,7 @@ public struct ShellSignal {
         self.tmuxClientTty = tmuxClientTty
         self.tmuxPane = tmuxPane
         self.tmuxPanes = tmuxPanes
+        self.procStart = procStart
         self.updatedAt = updatedAt
     }
 }
@@ -6340,6 +6593,9 @@ extension ShellSignal: Equatable, Hashable {
         if lhs.tmuxPanes != rhs.tmuxPanes {
             return false
         }
+        if lhs.procStart != rhs.procStart {
+            return false
+        }
         if lhs.updatedAt != rhs.updatedAt {
             return false
         }
@@ -6355,6 +6611,7 @@ extension ShellSignal: Equatable, Hashable {
         hasher.combine(tmuxClientTty)
         hasher.combine(tmuxPane)
         hasher.combine(tmuxPanes)
+        hasher.combine(procStart)
         hasher.combine(updatedAt)
     }
 }
@@ -6374,6 +6631,7 @@ public struct FfiConverterTypeShellSignal: FfiConverterRustBuffer {
                 tmuxClientTty: FfiConverterOptionString.read(from: &buf),
                 tmuxPane: FfiConverterOptionString.read(from: &buf),
                 tmuxPanes: FfiConverterSequenceTypeTmuxPaneInfo.read(from: &buf),
+                procStart: FfiConverterOptionUInt64.read(from: &buf),
                 updatedAt: FfiConverterString.read(from: &buf)
             )
     }
@@ -6387,6 +6645,7 @@ public struct FfiConverterTypeShellSignal: FfiConverterRustBuffer {
         FfiConverterOptionString.write(value.tmuxClientTty, into: &buf)
         FfiConverterOptionString.write(value.tmuxPane, into: &buf)
         FfiConverterSequenceTypeTmuxPaneInfo.write(value.tmuxPanes, into: &buf)
+        FfiConverterOptionUInt64.write(value.procStart, into: &buf)
         FfiConverterString.write(value.updatedAt, into: &buf)
     }
 }
@@ -9635,6 +9894,31 @@ private struct FfiConverterSequenceTypeMethodTemplate: FfiConverterRustBuffer {
 #if swift(>=5.8)
     @_documentation(visibility: private)
 #endif
+private struct FfiConverterSequenceTypeOsLivenessEntry: FfiConverterRustBuffer {
+    typealias SwiftType = [OsLivenessEntry]
+
+    static func write(_ value: [OsLivenessEntry], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterTypeOsLivenessEntry.write(item, into: &buf)
+        }
+    }
+
+    static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [OsLivenessEntry] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [OsLivenessEntry]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            try seq.append(FfiConverterTypeOsLivenessEntry.read(from: &buf))
+        }
+        return seq
+    }
+}
+
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
 private struct FfiConverterSequenceTypePhaseInstance: FfiConverterRustBuffer {
     typealias SwiftType = [PhaseInstance]
 
@@ -10094,6 +10378,9 @@ private var initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if uniffi_capacitor_core_checksum_method_coreruntime_ingest_hook_event() != 9359 {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if uniffi_capacitor_core_checksum_method_coreruntime_ingest_os_liveness() != 8912 {
         return InitializationResult.apiChecksumMismatch
     }
     if uniffi_capacitor_core_checksum_method_coreruntime_ingest_shell_signal() != 37901 {

@@ -93,7 +93,7 @@ pub fn send_shell_cwd_event(
     parent_app: ParentApp,
     tmux_session: Option<String>,
     tmux_client_tty: Option<String>,
-    _proc_start: Option<u64>,
+    proc_start: Option<u64>,
     tmux_pane: Option<String>,
     tmux_panes: Vec<TmuxPaneInfo>,
 ) -> Result<(), String> {
@@ -106,6 +106,9 @@ pub fn send_shell_cwd_event(
         tmux_client_tty,
         tmux_pane,
         tmux_panes,
+        // Carry the already-captured OS process start time so the reducer can
+        // store it on the session for PID-reuse-safe liveness probing.
+        proc_start,
         recorded_at: Utc::now().to_rfc3339(),
     };
 

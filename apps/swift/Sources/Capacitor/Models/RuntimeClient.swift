@@ -500,6 +500,7 @@ final class RuntimeClient {
                 lastAuthoritativeEventAt: session.lastAuthoritativeEventAt,
                 gcReason: session.gcReason,
                 isAlive: session.isAlive,
+                osProcessAlive: session.osProcessAlive,
             )
         }
     }
@@ -705,6 +706,7 @@ private struct SnapshotSessionPayload: Decodable {
     let lastAuthoritativeEventAt: String?
     let gcReason: String?
     let isAlive: Bool?
+    let osProcessAlive: Bool?
 
     enum CodingKeys: String, CodingKey {
         case sessionId = "session_id"
@@ -723,6 +725,7 @@ private struct SnapshotSessionPayload: Decodable {
         case lastAuthoritativeEventAt = "last_authoritative_event_at"
         case gcReason = "gc_reason"
         case isAlive = "is_alive"
+        case osProcessAlive = "os_process_alive"
     }
 }
 

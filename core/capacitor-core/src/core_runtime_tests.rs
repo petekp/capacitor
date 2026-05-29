@@ -160,6 +160,7 @@ fn test_rejected_mutation_does_not_advance_change_counter() {
             tmux_pane: None,
             tmux_panes: vec![],
             recorded_at: Utc::now().to_rfc3339(),
+            proc_start: None,
         })
         .expect("ingest shell signal");
     assert!(!outcome.ok, "empty cwd/tty must be rejected");
@@ -507,6 +508,8 @@ fn run_gc_at_uses_explicit_reference_time() {
                 last_authoritative_event_at: None,
                 is_alive: false,
                 gc_reason: None,
+                process_start_time: None,
+                os_process_alive: None,
             },
             SessionSummary {
                 session_id: "idle-survivor".to_string(),
@@ -526,6 +529,8 @@ fn run_gc_at_uses_explicit_reference_time() {
                 last_authoritative_event_at: None,
                 is_alive: false,
                 gc_reason: None,
+                process_start_time: None,
+                os_process_alive: None,
             },
         ],
         shells: vec![],
@@ -935,6 +940,8 @@ fn stale_dead_snapshot_for_gc_read_test() -> AppSnapshot {
             last_authoritative_event_at: None,
             is_alive: false,
             gc_reason: None,
+            process_start_time: None,
+            os_process_alive: None,
         }],
         shells: vec![],
         routing: vec![],
@@ -982,6 +989,8 @@ fn stale_dead_snapshot_for_gc_notify_test() -> AppSnapshot {
             last_authoritative_event_at: None,
             is_alive: false,
             gc_reason: None,
+            process_start_time: None,
+            os_process_alive: None,
         }],
         shells: vec![],
         routing: vec![],
@@ -1038,6 +1047,7 @@ fn make_shell_signal_command(pid: u32, cwd: &str) -> IngestShellSignalCommand {
         tmux_client_tty: None,
         tmux_pane: None,
         tmux_panes: vec![],
+        proc_start: None,
         recorded_at: Utc::now().to_rfc3339(),
     }
 }
@@ -1194,6 +1204,8 @@ fn make_snapshot_session(state: &str, seconds_ago: i64, is_alive: Option<bool>) 
         last_authoritative_event_at: None,
         is_alive: is_alive.unwrap_or(false),
         gc_reason: None,
+        process_start_time: None,
+        os_process_alive: None,
     }
 }
 
@@ -1212,6 +1224,7 @@ fn unregister_shell_removes_shell_from_state() {
             tmux_pane: None,
             tmux_panes: vec![],
             recorded_at: "2099-01-01T00:00:00Z".to_string(),
+            proc_start: None,
         })
         .expect("shell signal");
 

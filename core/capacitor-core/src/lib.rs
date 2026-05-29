@@ -31,8 +31,9 @@ use std::sync::{Arc, Condvar, Mutex};
 
 use chrono::{DateTime, Utc};
 use domain::{
-    AppSnapshot, IngestHookEventCommand, IngestShellSignalCommand, MutateDelegationCommand,
-    MutateProjectCommand, MutationOutcome, ResolveRoutingCommand, RoutingView,
+    AppSnapshot, IngestHookEventCommand, IngestOsLivenessCommand, IngestShellSignalCommand,
+    MutateDelegationCommand, MutateProjectCommand, MutationOutcome, ResolveRoutingCommand,
+    RoutingView,
 };
 use runtime::{
     artifacts::{count_artifacts_in_dir, count_hooks_in_dir},

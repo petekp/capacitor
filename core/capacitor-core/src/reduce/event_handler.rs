@@ -1,8 +1,10 @@
 use chrono::{DateTime, Utc};
 
+use std::collections::HashMap;
+
 use crate::domain::{
-    normalize_path_for_matching, now_rfc3339, IngestHookEventCommand, IngestShellSignalCommand,
-    MutationOutcome, ShellSignal, ShellUnregisterCommand,
+    normalize_path_for_matching, now_rfc3339, IngestHookEventCommand, IngestOsLivenessCommand,
+    IngestShellSignalCommand, MutationOutcome, ShellSignal, ShellUnregisterCommand,
 };
 
 use super::gc::cleanup_orphaned_same_project_sessions;
@@ -144,6 +146,7 @@ pub(super) fn apply_shell_signal(
         tmux_client_tty: command.tmux_client_tty,
         tmux_pane: command.tmux_pane,
         tmux_panes: command.tmux_panes,
+        proc_start: command.proc_start,
         updated_at,
     };
 
@@ -174,4 +177,97 @@ pub(super) fn apply_shell_unregister(
             message: format!("shell {} not found (already removed)", command.pid),
         }
     }
+}
+
+/// PURE OS-liveness reducer. Records the per-PID OS facts gathered by the
+/// hud-hook sweep onto matching sessions. This function performs NO operating
+/// system calls (no `sysinfo`, no process probing) — it only consumes the facts
+/// the caller already gathered, which keeps the reducer replay-deterministic.
+///
+/// For each tracked session:
+/// - Find the sweep entry whose `pid` matches the session `pid`.
+/// - PID-reuse defense: if BOTH the session's `process_start_time` and the
+///   entry's `process_start_time` are known and they DIFFER, the live process
+///   is a different process that reused the PID — resolve `alive = false`.
+/// - `os_process_alive` is set to the OR-aggregation of the resolved (and
+///   possibly reuse-corrected) `alive` flags across every tracked record
+///   sharing the same session id: a session id is alive if any of its records
+///   resolved alive.
+///
+/// This deliberately does NOT touch `is_alive` (event-decay liveness) — the two
+/// liveness notions are distinct facts.
+pub(super) fn apply_os_liveness(
+    state: &mut ReducerState,
+    command: IngestOsLivenessCommand,
+) -> MutationOutcome {
+    state.events_ingested = state.events_ingested.saturating_add(1);
+
+    // Index the sweep facts by pid for O(1) lookup.
+    let mut by_pid: HashMap<u32, &crate::domain::OsLivenessEntry> = HashMap::new();
+    for entry in &command.entries {
+        by_pid.insert(entry.pid, entry);
+    }
+
+    let mut changed = false;
+
+    // First pass: resolve per-session alive (with PID-reuse gating) and
+    // OR-aggregate by session id. A session id can in principle map to more
+    // than one tracked record across resurrections, so a session id is alive
+    // if any record under it resolved alive.
+    let mut alive_by_session: HashMap<String, bool> = HashMap::new();
+    for session in state.sessions.values() {
+        let resolved_alive = resolve_os_alive(session, by_pid.get(&session.pid).copied());
+        let slot = alive_by_session
+            .entry(session.session_id.clone())
+            .or_insert(false);
+        *slot = *slot || resolved_alive;
+    }
+
+    for session in state.sessions.values_mut() {
+        let resolved_alive = alive_by_session
+            .get(&session.session_id)
+            .copied()
+            .unwrap_or(false);
+
+        let new_alive = Some(resolved_alive);
+        if session.os_process_alive != new_alive {
+            changed = true;
+        }
+        session.os_process_alive = new_alive;
+    }
+
+    if changed {
+        // Liveness facts feed projection/derived state; recompute so projects
+        // reflect the latest fact set. Routing is shell-derived and unaffected.
+        state.recompute_projects();
+    }
+
+    MutationOutcome {
+        ok: true,
+        message: "os liveness recorded".to_string(),
+    }
+}
+
+/// Resolve a single session's OS-alive fact from its matching sweep entry,
+/// applying PID-reuse gating. Returns false when there is no matching entry.
+fn resolve_os_alive(
+    session: &crate::domain::SessionSummary,
+    entry: Option<&crate::domain::OsLivenessEntry>,
+) -> bool {
+    let Some(entry) = entry else {
+        return false;
+    };
+    if !entry.alive {
+        return false;
+    }
+    // PID-reuse defense: when both start times are known and differ, the live
+    // process at this pid is NOT the session's original process.
+    if let (Some(session_start), Some(observed_start)) =
+        (session.process_start_time, entry.process_start_time)
+    {
+        if session_start != observed_start {
+            return false;
+        }
+    }
+    true
 }

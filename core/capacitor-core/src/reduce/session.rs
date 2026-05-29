@@ -322,6 +322,14 @@ fn upsert_session(
         _ => current.and_then(|record| record.last_authoritative_event_at.clone()),
     };
 
+    // Carry the OS process start time from the matching shell signal when
+    // available; otherwise preserve whatever the current session already had.
+    // Used purely as a PID-reuse discriminator for the OS-liveness sweep.
+    let process_start_time = shells
+        .get(&pid)
+        .and_then(|shell| shell.proc_start)
+        .or_else(|| current.and_then(|record| record.process_start_time));
+
     SessionSummary {
         session_id: event.session_id.clone(),
         pid,
@@ -340,6 +348,11 @@ fn upsert_session(
         last_authoritative_event_at,
         is_alive: pid > 0 && shells.contains_key(&pid),
         gc_reason: None,
+        process_start_time,
+        // OS-liveness facts are recorded only by the dedicated sweep ingest path
+        // (ingest_os_liveness); a hook-event upsert preserves the prior probe
+        // result rather than fabricating one.
+        os_process_alive: current.and_then(|record| record.os_process_alive),
     }
 }
 

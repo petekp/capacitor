@@ -219,21 +219,34 @@ final class WorkBatchPresentationCharacterizationTests: XCTestCase {
         XCTAssertEqual(chipState(projection), .waiting)
     }
 
-    func testReconciler_duplicateExactProcess_projectsWaiting_alreadyOpenClickToReenter() {
-        // SMUGGLED-IN ATTENTION STATE #1 variant (duplicate-cockpit, same
-        // assigned session as duplicate process): different bespoke summary.
+    // C5 RETIREMENT LOCK: same-session OS-process duplicate detection is gone.
+    // A single assigned, process-alive session (no foreign session ids) is just
+    // the live cockpit — it must NOT project the duplicate-cockpit waiting
+    // state.
+    func testReconciler_singleAssignedProcessAlive_doesNotProjectDuplicateWaiting() {
         let result = reconcile(
             batchStatus: .working,
             summary: "Working on Add green border.",
             taskStatus: .queued,
             bindingStatus: .running,
-            sessions: [],
-            processSessionIDs: { _ in ["session-batch", "session-batch"] },
+            sessions: [
+                // The OS-liveness sweep reports the single assigned session as
+                // process-alive after its event signals decayed. This is the
+                // live cockpit, not a duplicate.
+                session(
+                    id: "session-batch",
+                    cwd: worktree,
+                    state: "working",
+                    gcReason: "signal_absence",
+                    isAlive: false,
+                    osProcessAlive: true,
+                ),
+            ],
         )
         let projection = project(result)
-        XCTAssertEqual(projection.status, .waiting)
-        XCTAssertEqual(projection.currentActivitySummary, "Claude Code is already open; click to re-enter.")
-        XCTAssertEqual(chipState(projection), .waiting)
+        XCTAssertNotEqual(projection.status, .waiting)
+        XCTAssertNotEqual(projection.currentActivitySummary, "Multiple Claude Code sessions match this Work Batch.")
+        XCTAssertNotEqual(chipState(projection), .waiting)
     }
 
     func testReconciler_doneBatch_foreignDuplicate_staysReadyDone() {
@@ -388,10 +401,22 @@ final class WorkBatchPresentationCharacterizationTests: XCTestCase {
         let router = harness.router(
             classifier: harness.existingClassifier(batchID: "batch-mobile"),
             coordinator: harness.wakingCoordinator(expectedName: "should-not-launch"),
-            processSessionIDs: { binding in binding.batchID == "batch-mobile" ? ["assigned-session-existing"] : [] },
             safeWakeBoundaryAllowsInput: { binding in binding.batchID == "batch-mobile" },
         )
-        _ = router.reconcileBindings(projects: [harness.project], sessions: [], now: harness.now)
+        _ = router.reconcileBindings(
+            projects: [harness.project],
+            sessions: [
+                harness.session(
+                    id: "assigned-session-existing",
+                    cwd: harness.mobileWorktreePath,
+                    state: "working",
+                    gcReason: "signal_absence",
+                    isAlive: false,
+                    osProcessAlive: true,
+                ),
+            ],
+            now: harness.now,
+        )
         _ = try await router.routeCapturedTask(
             project: harness.project,
             idea: harness.idea(id: "idea-green", title: "Add green border around the mobile prototype"),
@@ -433,7 +458,20 @@ final class WorkBatchPresentationCharacterizationTests: XCTestCase {
         let router = harness.router(
             classifier: harness.throwingClassifier(),
             coordinator: harness.wakingCoordinator(expectedName: "should-not-launch"),
-            processSessionIDs: { binding in binding.batchID == "batch-mobile" ? ["assigned-session-existing"] : [] },
+        )
+        _ = router.reconcileBindings(
+            projects: [harness.project],
+            sessions: [
+                harness.session(
+                    id: "assigned-session-existing",
+                    cwd: harness.mobileWorktreePath,
+                    state: "working",
+                    gcReason: "signal_absence",
+                    isAlive: false,
+                    osProcessAlive: true,
+                ),
+            ],
+            now: harness.now,
         )
         _ = try await router.followThroughWorkBatchDelivery(
             project: harness.project,
@@ -1090,14 +1128,12 @@ final class WorkBatchPresentationCharacterizationTests: XCTestCase {
         bindingStatus: WorkBatchCockpitBindingStatus,
         bindingUpdatedAt: Date = Date(timeIntervalSince1970: 1_775_000_000),
         sessions: [RuntimeSession],
-        processSessionIDs: @escaping WorkBatchBindingReconciler.ProcessSessionLookup = { _ in [] },
     ) -> WorkBatchBindingReconciliationResult {
         WorkBatchBindingReconciler.reconcile(
             state: pureState(batchStatus: batchStatus, summary: summary, taskStatus: taskStatus, checkpointPending: false),
             bindings: [pureBinding(status: bindingStatus, updatedAt: bindingUpdatedAt)],
             sessions: sessions,
             now: Date(timeIntervalSince1970: 1_775_000_200),
-            processSessionIDs: processSessionIDs,
         )
     }
 
@@ -1201,6 +1237,7 @@ final class WorkBatchPresentationCharacterizationTests: XCTestCase {
         toolsInFlight: Int? = nil,
         gcReason: String? = nil,
         isAlive: Bool? = true,
+        osProcessAlive: Bool? = nil,
     ) -> RuntimeSession {
         RuntimeSession(
             sessionId: id,
@@ -1219,6 +1256,7 @@ final class WorkBatchPresentationCharacterizationTests: XCTestCase {
             lastAuthoritativeEventAt: nil,
             gcReason: gcReason,
             isAlive: isAlive,
+            osProcessAlive: osProcessAlive,
         )
     }
 
@@ -1339,7 +1377,6 @@ private final class Harness {
     func router(
         classifier: @escaping WorkBatchAutoRouter.Classifier,
         coordinator: WorkBatchTaskSessionCoordinator,
-        processSessionIDs: @escaping WorkBatchBindingReconciler.ProcessSessionLookup = { _ in [] },
         safeWakeBoundaryAllowsInput: ((WorkBatchCockpitBinding) -> Bool)? = nil,
     ) -> WorkBatchAutoRouter {
         WorkBatchAutoRouter(
@@ -1347,7 +1384,6 @@ private final class Harness {
             stateStoreFactory: { [stateStore] _ in stateStore },
             bindingStoreFactory: { [bindingStore] _ in bindingStore },
             taskSessionCoordinator: coordinator,
-            processSessionIDs: processSessionIDs,
             safeWakeBoundaryAllowsInput: safeWakeBoundaryAllowsInput,
         )
     }
@@ -1542,6 +1578,7 @@ private final class Harness {
         toolsInFlight: Int? = nil,
         gcReason: String? = nil,
         isAlive: Bool? = true,
+        osProcessAlive: Bool? = nil,
     ) -> RuntimeSession {
         RuntimeSession(
             sessionId: id,
@@ -1560,6 +1597,7 @@ private final class Harness {
             lastAuthoritativeEventAt: nil,
             gcReason: gcReason,
             isAlive: isAlive,
+            osProcessAlive: osProcessAlive,
         )
     }
 }

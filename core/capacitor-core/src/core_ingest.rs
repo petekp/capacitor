@@ -115,6 +115,16 @@ impl CoreRuntime {
         self.commit(|state| state.apply_shell_signal(normalized))
     }
 
+    /// Pure OS-liveness ingest. The caller (hud-hook sweep) owns the sysinfo
+    /// probe and supplies the per-PID facts; this path only records them onto
+    /// matching sessions via the pure reducer. It performs no OS calls itself.
+    pub fn ingest_os_liveness(
+        &self,
+        command: IngestOsLivenessCommand,
+    ) -> Result<MutationOutcome, CoreRuntimeError> {
+        self.commit(|state| state.apply_os_liveness(command))
+    }
+
     pub fn mutate_project(
         &self,
         command: MutateProjectCommand,

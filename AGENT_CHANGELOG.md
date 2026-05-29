@@ -9,6 +9,14 @@ Use this file only for recent migration context and retired seams that still mat
 
 ## Recent Active Deltas
 
+### 2026-05-28 — OS-Liveness Fact Shipped + Same-Session Duplicate Detection Retired (C5)
+
+**OS liveness (C5).** The hud-hook OS sweep now emits a per-session OS-liveness fact on the wire: `SessionSummary.os_process_alive: Option<bool>` (`Some(true)`/`Some(false)` when probed, `None` = not-yet-probed = unknown, never dead). It is DISTINCT from event-decay `is_alive` and is set only by the dedicated sweep ingest path (`apply_os_liveness`), which OR-aggregates resolved per-PID liveness by session-id with PID-reuse gating (start-time mismatch reads as not-alive) and never touches `is_alive`. This let `WorkBatchClaudeProcessScanner` (the `ps`/`lsof` scrape) be deleted; Swift keeps a quiet-but-live cockpit `.ready` after event-decay by reading `osProcessAlive`.
+
+**Same-session duplicate detection RETIRED.** A short-lived `os_process_count: Option<u32>` field was deleted as vestigial: the runtime keys sessions by id with exactly one PID each, so a fact built from tracked PIDs can never count `>1` per session-id — it was an exact alias for `(os_process_alive ? 1 : 0)`. The product decision is final. `WorkBatchBindingReconciler` no longer carries `hasSameSessionProcessDuplicate`; `duplicateCockpit` is now FOREIGN-session-only (two distinct session-ids in one Batch Worktree, gated by `sessionIDs`), which still flags and blocks re-entry. Tests were inverted to pin the retirement (a single assigned process-alive session is the live cockpit, not a duplicate) while foreign-session duplicate coverage stays intact.
+
+Key files: `core/capacitor-core/src/domain/types.rs`, `core/capacitor-core/src/reduce/event_handler.rs`, `core/hud-hook/src/liveness.rs`, `apps/swift/Sources/Capacitor/Models/WorkBatchBindingReconciler.swift`, `apps/swift/Sources/Capacitor/Models/WorkBatchAutoRouter.swift`, `apps/swift/Sources/Capacitor/Models/RuntimeClient.swift`.
+
 ### 2026-04-19 — Run Checkpoint Timeline Durability Closed Out
 
 **Checkpoint history and Project Detail timeline** (PRs #45-#52, `3ac525a9..25df1b94`): run checkpoints now have runtime-owned durable history. The Rust run kernel archives decided checkpoints in `past_checkpoints`, assigns monotonic `history_ordinal` values from `RunState.next_checkpoint_history_ordinal`, preserves ordinals through restart/truncation/legacy snapshots, and keeps the most recent 50 decided checkpoints per run. Swift decodes that snapshot state and Project Detail renders the latest run with checkpoint history from `past_checkpoints` plus any current `activeCheckpoint`; it uses `historyOrdinal` for timeline order and row identity when present and derives only display labels/round numbers in Swift.

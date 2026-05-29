@@ -165,6 +165,9 @@ pub fn run(port: u16) -> Result<(), String> {
 
             if wait_result.1.timed_out() {
                 if let Some(runtime) = gc_state.runtime.as_ref() {
+                    // Reuse one sleep/wake-adjusted reference time for both the
+                    // event-decay GC sweep and the OS-liveness sweep so they
+                    // agree on "now" across a sleep/wake boundary.
                     let adjusted_now = adjusted_gc_reference_time(&gc_state.sleep_tracker);
                     match runtime.run_gc_at(adjusted_now) {
                         Ok(changed) => {
@@ -173,6 +176,19 @@ pub fn run(port: u16) -> Result<(), String> {
                         }
                         Err(error) => {
                             tracing::warn!(error = %error, "Periodic GC tick failed");
+                        }
+                    }
+
+                    // OS-liveness sweep: probe ONLY the known session pids via a
+                    // single batched sysinfo refresh and record the pure facts.
+                    // The sysinfo probe is owned here (the long-lived service),
+                    // never in the replay-deterministic capacitor-core reducer.
+                    match crate::liveness::run_sweep(runtime, adjusted_now) {
+                        Ok(probed) => {
+                            tracing::trace!(probed, "os_liveness_sweep tick");
+                        }
+                        Err(error) => {
+                            tracing::warn!(error = %error, "OS-liveness sweep failed");
                         }
                     }
                 }

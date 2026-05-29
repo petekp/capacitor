@@ -56,10 +56,10 @@ final class WorkBatchBindingReconcilerTests: XCTestCase {
                     cwd: "/tmp/project/.capacitor/worktrees/batch-mobile",
                     isAlive: false,
                     gcReason: "signal_absence",
+                    osProcessAlive: true,
                 ),
             ],
             now: now,
-            processSessionIDs: { _ in ["session-batch"] },
         )
 
         XCTAssertEqual(result.bindings[0].status, .running)
@@ -144,7 +144,13 @@ final class WorkBatchBindingReconcilerTests: XCTestCase {
         XCTAssertEqual(result.issues.map(\.kind), [.missingCockpit])
     }
 
-    func testDuplicateSameSessionProcessesFlagDuplicateCockpit() {
+    // C5 RETIREMENT LOCK: same-session OS-process duplicate detection is gone.
+    // A single matching in-worktree session (no foreign session ids, no count
+    // signal) is just the live assigned cockpit — it must NOT raise a
+    // duplicateCockpit issue and must NOT block re-entry, even when the only
+    // liveness evidence is the OS-process fact (osProcessAlive) after event
+    // signals decayed.
+    func testSingleAssignedSessionDoesNotFlagDuplicateCockpit() {
         let now = Date(timeIntervalSince1970: 1_775_000_200)
         var inputState = state(status: .working, summary: "Adding green border.")
         inputState.tasks[0].status = .working
@@ -152,18 +158,22 @@ final class WorkBatchBindingReconcilerTests: XCTestCase {
         let result = WorkBatchBindingReconciler.reconcile(
             state: inputState,
             bindings: [binding(status: .running)],
-            sessions: [],
+            sessions: [
+                runtimeSession(
+                    sessionId: "session-batch",
+                    cwd: "/tmp/project/.capacitor/worktrees/batch-mobile",
+                    isAlive: false,
+                    gcReason: "signal_absence",
+                    osProcessAlive: true,
+                ),
+            ],
             now: now,
-            processSessionIDs: { _ in ["session-batch", "session-batch"] },
         )
 
-        XCTAssertEqual(result.bindings[0].status, .waiting)
-        XCTAssertEqual(result.state.batches[0].status, .waiting)
-        XCTAssertEqual(attentionReason(result), .duplicateCockpit(assignedProcessDuplicate: true))
-        XCTAssertEqual(derivedSummary(result), "Claude Code is already open; click to re-enter.")
-        XCTAssertEqual(result.state.tasks[0].status, .queued)
-        XCTAssertEqual(result.issues.map(\.kind), [.duplicateCockpit])
-        XCTAssertTrue(result.issues[0].sessionIDs.contains("session-batch (duplicate process)"))
+        XCTAssertEqual(result.bindings[0].status, .running)
+        XCTAssertEqual(result.state.batches[0].status, .working)
+        XCTAssertEqual(result.state.tasks[0].status, .working)
+        XCTAssertTrue(result.issues.isEmpty, "a single assigned session must not be a duplicate cockpit")
     }
 
     func testRecentLaunchingBindingKeepsGraceWindow() {
@@ -227,7 +237,7 @@ final class WorkBatchBindingReconcilerTests: XCTestCase {
 
         XCTAssertEqual(result.bindings[0].status, .waiting)
         XCTAssertEqual(result.state.batches[0].status, .waiting)
-        XCTAssertEqual(attentionReason(result), .duplicateCockpit(assignedProcessDuplicate: false))
+        XCTAssertEqual(attentionReason(result), .duplicateCockpit)
         XCTAssertEqual(derivedSummary(result), "Multiple Claude Code sessions match this Work Batch.")
         XCTAssertEqual(result.state.tasks[0].status, .queued)
         XCTAssertEqual(result.issues.map(\.kind), [.duplicateCockpit])
@@ -341,7 +351,7 @@ final class WorkBatchBindingReconcilerTests: XCTestCase {
     func testDoneBatchRecordsDuplicateOldCockpitsWithoutPullingWorkBackToWaiting() {
         let now = Date(timeIntervalSince1970: 1_775_000_200)
         var inputState = state(status: .waiting, summary: "")
-        inputState.batches[0].attentionReason = .duplicateCockpit(assignedProcessDuplicate: false)
+        inputState.batches[0].attentionReason = .duplicateCockpit
         inputState.tasks[0].status = .done
         let inputBinding = binding(status: .waiting)
 
@@ -626,7 +636,7 @@ final class WorkBatchBindingReconcilerTests: XCTestCase {
     func testPersistentDuplicateBindingDoesNotChurnTimestamps() {
         let now = Date(timeIntervalSince1970: 1_775_000_200)
         var inputState = state(status: .waiting, summary: "")
-        inputState.batches[0].attentionReason = .duplicateCockpit(assignedProcessDuplicate: false)
+        inputState.batches[0].attentionReason = .duplicateCockpit
         let inputBinding = binding(status: .waiting)
 
         let result = WorkBatchBindingReconciler.reconcile(
@@ -735,6 +745,7 @@ final class WorkBatchBindingReconcilerTests: XCTestCase {
         toolsInFlight: Int? = nil,
         isAlive: Bool?,
         gcReason: String? = nil,
+        osProcessAlive: Bool? = nil,
     ) -> RuntimeSession {
         RuntimeSession(
             sessionId: sessionId,
@@ -753,6 +764,7 @@ final class WorkBatchBindingReconcilerTests: XCTestCase {
             lastAuthoritativeEventAt: nil,
             gcReason: gcReason,
             isAlive: isAlive,
+            osProcessAlive: osProcessAlive,
         )
     }
 }

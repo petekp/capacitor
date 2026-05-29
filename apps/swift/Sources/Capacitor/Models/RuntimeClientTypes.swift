@@ -157,6 +157,12 @@ struct RuntimeSession {
     let lastAuthoritativeEventAt: String?
     let gcReason: String?
     let isAlive: Bool?
+    /// OS-probed liveness fact from the most recent hud-hook sweep. `Some(true)`
+    /// means a live OS process matching this session's pid (and start time) was
+    /// observed, `Some(false)` means it was checked and absent, `nil` means
+    /// NOT-YET-PROBED (treat as unknown, never as dead). DISTINCT from `isAlive`
+    /// (event-decay liveness).
+    let osProcessAlive: Bool?
 }
 
 struct RuntimeStateSource: Decodable {

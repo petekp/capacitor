@@ -71,6 +71,20 @@ pub struct SessionSummary {
     pub is_alive: bool,
     #[serde(default)]
     pub gc_reason: Option<String>,
+    /// OS process start time (epoch seconds) captured when the shell signal was
+    /// first observed. Used to defend the OS-liveness probe against PID reuse:
+    /// a swept process whose start time differs is NOT the same process. `None`
+    /// when never observed (e.g. transcript-reconstructed sessions). Distinct
+    /// from `updated_at`/event timestamps — this is the OS process's birth time.
+    #[serde(default)]
+    pub process_start_time: Option<u64>,
+    /// OS-probed liveness fact: `Some(true)` if a live OS process matching this
+    /// session's `pid` (and `process_start_time`) was observed by the most
+    /// recent hud-hook sweep, `Some(false)` if it was checked and absent.
+    /// `None` means NOT-YET-PROBED and MUST be treated as UNKNOWN by consumers,
+    /// never as dead. This is DISTINCT from `is_alive` (event-decay liveness).
+    #[serde(default)]
+    pub os_process_alive: Option<bool>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize, uniffi::Enum)]
@@ -111,6 +125,11 @@ pub struct ShellSignal {
     pub tmux_pane: Option<String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub tmux_panes: Vec<TmuxPaneInfo>,
+    /// OS process start time (epoch seconds) for `pid`, captured at signal
+    /// time. Carried so the reducer can persist it onto the matching session
+    /// for PID-reuse-safe OS-liveness probing. `None` when unavailable.
+    #[serde(default)]
+    pub proc_start: Option<u64>,
     pub updated_at: String,
 }
 
@@ -337,6 +356,35 @@ pub struct IngestShellSignalCommand {
     pub tmux_pane: Option<String>,
     #[serde(default)]
     pub tmux_panes: Vec<TmuxPaneInfo>,
+    /// OS process start time (epoch seconds) for `pid`. Plumbed from hud-hook's
+    /// already-captured `proc_start` so the reducer can store it on the session
+    /// for PID-reuse defense during OS-liveness sweeps.
+    #[serde(default)]
+    pub proc_start: Option<u64>,
+    pub recorded_at: String,
+}
+
+/// A single per-PID OS-liveness observation produced by the hud-hook sweep.
+/// The reducer matches `pid` against tracked sessions and, when
+/// `process_start_time` is present, requires it to equal the session's stored
+/// `process_start_time` (PID-reuse defense) before recording `alive`.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize, uniffi::Record)]
+pub struct OsLivenessEntry {
+    pub pid: u32,
+    /// OS start time (epoch seconds) of the live process observed at `pid`.
+    /// `None` when the process was absent (then `alive` is false anyway).
+    pub process_start_time: Option<u64>,
+    /// Whether a live OS process was observed at `pid` during the sweep.
+    pub alive: bool,
+}
+
+/// Pure OS-liveness ingest command. Built entirely by the hud-hook sweep (which
+/// owns the sysinfo probe); the reducer that consumes it performs NO OS calls —
+/// it only records the provided facts onto matching sessions. This keeps the
+/// reducer replay-deterministic and FS/OS-free.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize, uniffi::Record)]
+pub struct IngestOsLivenessCommand {
+    pub entries: Vec<OsLivenessEntry>,
     pub recorded_at: String,
 }
 

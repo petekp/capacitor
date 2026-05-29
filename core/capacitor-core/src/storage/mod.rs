@@ -347,6 +347,8 @@ mod tests {
                 last_authoritative_event_at: None,
                 is_alive: true,
                 gc_reason: None,
+                process_start_time: None,
+                os_process_alive: None,
             }],
             shells: vec![ShellSignal {
                 pid: 10,
@@ -358,6 +360,7 @@ mod tests {
                 tmux_pane: None,
                 tmux_panes: vec![],
                 updated_at: "2026-02-28T00:00:00Z".to_string(),
+                proc_start: None,
             }],
             routing: vec![RoutingView {
                 workspace_id: "workspace".to_string(),

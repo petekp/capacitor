@@ -292,20 +292,64 @@ pub fn raw_http_request(port: u16, request: &str) -> (u16, String) {
     let _ = stream.flush();
     let _ = stream.shutdown(Shutdown::Write);
 
+    let response = read_full_http_response(&mut stream);
+
+    parse_http_response(&response)
+}
+
+/// Read a full HTTP response from `stream`, growing the buffer as needed and
+/// continuing past short reads until the declared `Content-Length` body has
+/// arrived (or the peer closes / times out). The previous fixed 8 KiB buffer
+/// silently truncated any response larger than 8192 bytes, because once `total`
+/// reached the buffer length the read targeted an empty `buf[len..]` slice and
+/// returned `Ok(0)` (a false EOF). Snapshot payloads now routinely exceed 8 KiB.
+fn read_full_http_response(stream: &mut TcpStream) -> String {
     let mut buf = vec![0u8; 8192];
     let mut total = 0;
     loop {
+        if total == buf.len() {
+            buf.resize(buf.len() * 2, 0);
+        }
         match stream.read(&mut buf[total..]) {
             Ok(0) => break,
-            Ok(n) => total += n,
+            Ok(n) => {
+                total += n;
+                if http_response_is_complete(&buf[..total]) {
+                    break;
+                }
+            }
             Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => break,
             Err(e) if e.kind() == std::io::ErrorKind::TimedOut => break,
             Err(_) => break,
         }
     }
-    let response = String::from_utf8_lossy(&buf[..total]).to_string();
+    String::from_utf8_lossy(&buf[..total]).to_string()
+}
 
-    parse_http_response(&response)
+/// Returns true once `bytes` holds a complete response: full header block plus a
+/// body matching `Content-Length`. Without a `Content-Length` header we cannot
+/// bound the body, so we report incomplete and let the caller drain to close.
+fn http_response_is_complete(bytes: &[u8]) -> bool {
+    let text = String::from_utf8_lossy(bytes);
+    let Some(header_end) = text.find("\r\n\r\n") else {
+        return false;
+    };
+    let headers = &text[..header_end];
+    let body_start = header_end + 4;
+
+    let content_length = headers.lines().find_map(|line| {
+        let (name, value) = line.split_once(':')?;
+        if name.trim().eq_ignore_ascii_case("Content-Length") {
+            value.trim().parse::<usize>().ok()
+        } else {
+            None
+        }
+    });
+
+    match content_length {
+        Some(len) => bytes.len().saturating_sub(body_start) >= len,
+        None => false,
+    }
 }
 
 /// Send an HTTP request, returning Err if the connection fails.
@@ -348,18 +392,7 @@ fn try_http_request_with_headers(
     let _ = stream.flush();
     let _ = stream.shutdown(Shutdown::Write);
 
-    let mut buf = vec![0u8; 8192];
-    let mut total = 0;
-    loop {
-        match stream.read(&mut buf[total..]) {
-            Ok(0) => break,
-            Ok(n) => total += n,
-            Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => break,
-            Err(e) if e.kind() == std::io::ErrorKind::TimedOut => break,
-            Err(_) => break,
-        }
-    }
-    let response = String::from_utf8_lossy(&buf[..total]).to_string();
+    let response = read_full_http_response(&mut stream);
 
     Ok(parse_http_response(&response))
 }
