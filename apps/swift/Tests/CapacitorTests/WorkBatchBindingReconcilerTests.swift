@@ -144,12 +144,12 @@ final class WorkBatchBindingReconcilerTests: XCTestCase {
         XCTAssertEqual(result.issues.map(\.kind), [.missingCockpit])
     }
 
-    // C5 RETIREMENT LOCK: same-session OS-process duplicate detection is gone.
-    // A single matching in-worktree session (no foreign session ids, no count
-    // signal) is just the live assigned cockpit — it must NOT raise a
-    // duplicateCockpit issue and must NOT block re-entry, even when the only
-    // liveness evidence is the OS-process fact (osProcessAlive) after event
-    // signals decayed.
+    /// C5 RETIREMENT LOCK: same-session OS-process duplicate detection is gone.
+    /// A single matching in-worktree session (no foreign session ids, no count
+    /// signal) is just the live assigned cockpit — it must NOT raise a
+    /// duplicateCockpit issue and must NOT block re-entry, even when the only
+    /// liveness evidence is the OS-process fact (osProcessAlive) after event
+    /// signals decayed.
     func testSingleAssignedSessionDoesNotFlagDuplicateCockpit() {
         let now = Date(timeIntervalSince1970: 1_775_000_200)
         var inputState = state(status: .working, summary: "Adding green border.")

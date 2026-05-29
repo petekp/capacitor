@@ -1605,9 +1605,9 @@ final class WorkBatchAutoRouter {
     }
 
     private func duplicateCockpitAttentionReason(
-        for binding: WorkBatchCockpitBinding?,
-        batchID: String,
-        issues: [WorkBatchBindingReconciliationIssue],
+        for _: WorkBatchCockpitBinding?,
+        batchID _: String,
+        issues _: [WorkBatchBindingReconciliationIssue],
     ) -> WorkBatchAttentionReason {
         // Same-session OS-process duplicate detection was RETIRED in C5: the
         // runtime tracks one PID per session id, so a duplicateCockpit is always

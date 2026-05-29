@@ -219,10 +219,10 @@ final class WorkBatchPresentationCharacterizationTests: XCTestCase {
         XCTAssertEqual(chipState(projection), .waiting)
     }
 
-    // C5 RETIREMENT LOCK: same-session OS-process duplicate detection is gone.
-    // A single assigned, process-alive session (no foreign session ids) is just
-    // the live cockpit — it must NOT project the duplicate-cockpit waiting
-    // state.
+    /// C5 RETIREMENT LOCK: same-session OS-process duplicate detection is gone.
+    /// A single assigned, process-alive session (no foreign session ids) is just
+    /// the live cockpit — it must NOT project the duplicate-cockpit waiting
+    /// state.
     func testReconciler_singleAssignedProcessAlive_doesNotProjectDuplicateWaiting() {
         let result = reconcile(
             batchStatus: .working,

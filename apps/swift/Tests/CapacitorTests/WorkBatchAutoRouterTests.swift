@@ -2274,10 +2274,10 @@ final class WorkBatchAutoRouterTests: XCTestCase {
         XCTAssertEqual(state.tasks.first(where: { $0.id == "idea-green" })?.status, .queued)
     }
 
-    // C5 RETIREMENT LOCK: same-session OS-process duplicate detection is gone.
-    // A single assigned, process-alive session in the worktree (no foreign
-    // session ids, no count signal) is just the live cockpit — routing a
-    // related task must NOT flag a duplicateCockpit and must NOT block re-entry.
+    /// C5 RETIREMENT LOCK: same-session OS-process duplicate detection is gone.
+    /// A single assigned, process-alive session in the worktree (no foreign
+    /// session ids, no count signal) is just the live cockpit — routing a
+    /// related task must NOT flag a duplicateCockpit and must NOT block re-entry.
     func testSingleAssignedSessionProcessIsNotTreatedAsDuplicate() async throws {
         let harness = try RouterHarness()
         try harness.seedMobileBatch(status: .working, bindingStatus: .running)

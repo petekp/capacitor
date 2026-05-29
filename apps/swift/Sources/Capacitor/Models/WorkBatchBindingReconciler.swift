@@ -20,18 +20,6 @@ struct WorkBatchBindingReconciliationIssue: Equatable {
     /// `osProcessAlive`) are unaffected.
     let sessionIDs: [String]
     let message: String
-
-    init(
-        kind: Kind,
-        batchID: String,
-        sessionIDs: [String],
-        message: String,
-    ) {
-        self.kind = kind
-        self.batchID = batchID
-        self.sessionIDs = sessionIDs
-        self.message = message
-    }
 }
 
 struct WorkBatchBindingReconciliationResult: Equatable {
