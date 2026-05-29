@@ -24,20 +24,24 @@ import XCTest
 ///                      If a row converges, the test fails and tells you to
 ///                      reclassify it.
 ///
-/// `documented_divergence` covers TWO kinds, matching the corpus:
-///   1. Intentional/by-design divergence (the `dotdot_segment` / `dot_segment`
-///      rows): Rust `normalize_path_for_matching` is a PURE STRING op that leaves
-///      `.`/`..` literal for replay determinism, while Swift's
-///      `URL.standardizedFileURL` lexically collapses them.
-///   2. CURRENT cross-language `workspace_id` drift flagged `phase2_reconcile`
-///      in the corpus (the `trailing_slash` / `double_trailing_slash` /
-///      `git_project_id` rows). These USED to be mislabeled `must_agree` with a
-///      false "both languages compute it identically" note; the C2-Phase1 test
-///      DISCOVERED they actually diverge on `workspace_id`. They are now honestly
-///      classified as `documented_divergence` + `phase2_reconcile: true`. The
-///      actual fix is the DEFERRED C2-Phase2 key/normalizer reconciliation; today
-///      they are rescued only by SessionStateManager runtime path-containment
-///      fallbacks. We pin the CURRENT Swift value and cross-reference the corpus.
+/// After C2-Phase2 SWIFTJOIN, `documented_divergence` covers only ONE kind:
+///   * Intentional/by-design divergence (the `dotdot_segment` / `dot_segment`
+///     rows): Rust `normalize_path_for_matching` is a PURE STRING op that leaves
+///     `.`/`..` literal for replay determinism, while Swift's
+///     `URL.standardizedFileURL` lexically collapses them. Swift KEEPS this
+///     FS-touching transform locally (it delegates only the pure-string
+///     trailing-slash/lowercase tail to the shared Rust matcher), so the seam is
+///     by design and permanent.
+///
+/// The former `phase2_reconcile` rows (`trailing_slash` / `double_trailing_slash`
+/// / `git_project_id`) — once cross-language `workspace_id` drift rescued only by
+/// runtime path-containment fallbacks — are now RECONCILED to `must_agree`:
+///   * trailing/double-trailing collapse because both languages run the shared
+///     Rust `normalize_path_for_matching` (trailing-slash trim) before hashing.
+///   * `git_project_id` agrees because `WorkspaceIdentity.fromPath` now mirrors
+///     Rust's `.git`-relative source-string rewriting.
+/// They are asserted by `testMustAgreeRowsMatchRust` and no longer pinned as
+/// divergent here.
 final class PathNormalizerConformanceTests: XCTestCase {
     // MARK: - Corpus model
 
@@ -73,43 +77,34 @@ final class PathNormalizerConformanceTests: XCTestCase {
 
     // MARK: - Pinned CURRENT Swift outputs for documented_divergence rows
 
-    /// CURRENT Swift `PathNormalizer.normalize` outputs for every
+    /// CURRENT Swift `PathNormalizer.normalize` outputs for every remaining
     /// `documented_divergence` row. Pinning these makes Swift-side drift LOUD; the
-    /// values are asserted to STILL differ from the Rust `expected_normalize`
-    /// (where applicable) so a silent convergence forces a reclassification.
+    /// values are asserted to STILL differ from the Rust `expected_normalize` so a
+    /// silent convergence forces a reclassification.
+    ///
+    /// C2-Phase2 SWIFTJOIN reconciled the former `phase2_reconcile` rows
+    /// (trailing_slash / double_trailing_slash / git_project_id): they are now
+    /// `must_agree` in the corpus and asserted by `testMustAgreeRowsMatchRust`, so
+    /// they are no longer pinned here. The ONLY remaining divergence is the
+    /// intentional, by-design `.`/`..` replay-determinism seam:
     ///
     ///   * dotdot_segment / dot_segment: `URL.standardizedFileURL` lexically
     ///     collapses `..` / `.`, so both reduce to `plain_abs` (Rust keeps them
-    ///     literal). normalize DIVERGES.
-    ///   * trailing_slash / double_trailing_slash: Swift strips trailing slashes in
-    ///     `PathNormalizer.normalize`, so normalize AGREES with Rust here — the
-    ///     divergence on these rows is on `workspace_id`, not `normalize`.
-    ///   * git_project_id: `.git` is a normal segment for the string normalizer, so
-    ///     normalize AGREES with Rust — again the divergence is on `workspace_id`.
+    ///     literal). normalize DIVERGES — and stays Swift-side by design (the Rust
+    ///     pure-string matcher Swift now delegates to never collapses `.`/`..`).
     private let pinnedSwiftNormalize: [String: String] = [
         "dotdot_segment": "/users/pete/code/myrepo",
         "dot_segment": "/users/pete/code/myrepo",
-        "trailing_slash": "/users/pete/code/myrepo",
-        "double_trailing_slash": "/users/pete/code/myrepo",
-        "git_project_id": "/users/pete/code/myrepo/.git",
     ]
 
-    /// CURRENT Swift `WorkspaceIdentity.fromPath` outputs for every
-    /// `documented_divergence` row. Each value is the C2-Phase2 reconcile target /
-    /// design-divergence reality, NOT the Rust source-of-truth value.
+    /// CURRENT Swift `WorkspaceIdentity.fromPath` outputs for every remaining
+    /// `documented_divergence` row (the intentional `.`/`..` seam). Each value is
+    /// the design-divergence reality, NOT the Rust source-of-truth value.
     private let pinnedSwiftWorkspaceId: [String: String] = [
-        // ".."/"." collapse to plain_abs, so Swift workspace_id == plain_abs's.
+        // ".."/"." collapse to plain_abs, so Swift workspace_id == plain_abs's,
+        // while Rust keeps the literal segment and hashes a different source.
         "dotdot_segment": "5d699b305e97dd1568da5aaf1ec9a3ab",
         "dot_segment": "5d699b305e97dd1568da5aaf1ec9a3ab",
-        // trailing/double-trailing: Swift strips the slash BEFORE hashing, so its
-        // workspace_id collides with plain_abs while Rust hashes the raw slashed
-        // input. C2-Phase2 reconcile target (phase2_reconcile: true).
-        "trailing_slash": "5d699b305e97dd1568da5aaf1ec9a3ab",
-        "double_trailing_slash": "5d699b305e97dd1568da5aaf1ec9a3ab",
-        // git_project_id: Swift has NO `.git` awareness; it hashes
-        // "/users/pete/code/myrepo/.git|/users/pete/code/myrepo/.git" whereas Rust
-        // rewrites the relative half to ".git". C2-Phase2 reconcile target.
-        "git_project_id": "f11988aa7d1c2ad9f893c462fef23134",
     ]
 
     /// Rows whose divergence is INTENTIONAL/by-design (normalize differs by
@@ -196,17 +191,15 @@ final class PathNormalizerConformanceTests: XCTestCase {
     /// the CURRENT Swift value (so future Swift-side drift is loud) and assert the
     /// divergence STILL holds against the Rust source-of-truth value.
     ///
-    /// This now covers BOTH kinds of divergence (see the type doc):
-    ///   * intentional `.`/`..` rows (normalize AND workspace_id diverge), and
-    ///   * `phase2_reconcile` rows where only `workspace_id` diverges (normalize
-    ///     agrees because Swift strips trailing slashes / treats `.git` as a plain
-    ///     segment). For those we assert the workspace_id divergence is the
-    ///     C2-Phase2 reconcile target.
+    /// After C2-Phase2 SWIFTJOIN, the ONLY remaining `documented_divergence` rows
+    /// are the intentional, by-design `.`/`..` replay-determinism seam (normalize
+    /// AND workspace_id diverge). The former `phase2_reconcile` rows
+    /// (trailing_slash / double_trailing_slash / git_project_id) are now reconciled
+    /// to `must_agree` and asserted by `testMustAgreeRowsMatchRust`.
     func testDocumentedDivergenceRowsPinCurrentSwiftBehavior() throws {
         let corpus = try loadCorpus()
 
         var sawDivergence = false
-        var sawPhase2Reconcile = false
         for row in corpus.staticRows where row.agreement == "documented_divergence" {
             sawDivergence = true
 
@@ -250,8 +243,8 @@ final class PathNormalizerConformanceTests: XCTestCase {
             )
 
             // For the by-design `.`/`..` rows, normalize ALSO diverges by
-            // construction; assert that too. The phase2_reconcile rows agree on
-            // normalize (only workspace_id drifts), so we don't assert it for them.
+            // construction; assert that too. (These are the only remaining
+            // documented_divergence rows after the C2-Phase2 SWIFTJOIN reconcile.)
             if intentionalNormalizeDivergenceRows.contains(row.id) {
                 XCTAssertNotEqual(
                     swiftNormalize,
@@ -261,25 +254,18 @@ final class PathNormalizerConformanceTests: XCTestCase {
                 )
             }
 
-            // The reclassified rows carry phase2_reconcile: true. Surface a loud,
-            // grep-able marker so the C2-Phase2 reconcile target is visible in logs.
-            if row.phase2Reconcile == true {
-                sawPhase2Reconcile = true
-                print(
-                    "C2-PHASE2 RECONCILE TARGET: documented_divergence row \(row.id) DISAGREES on " +
-                        "workspace_id (Rust expected \(row.expectedDefaultWorkspaceId), Swift produced " +
-                        "\(swiftWorkspaceId)) — current cross-language drift, rescued today only by " +
-                        "runtime path-containment fallbacks.",
-                )
-            }
+            // C2-Phase2 SWIFTJOIN: the former phase2_reconcile rows are now
+            // must_agree. Guard against regression — no documented_divergence row
+            // should carry phase2_reconcile any longer.
+            XCTAssertNotEqual(
+                row.phase2Reconcile,
+                true,
+                "row \(row.id) still flagged phase2_reconcile but C2-Phase2 SWIFTJOIN reconciled " +
+                    "those rows to must_agree — remove the phase2_reconcile marker from the corpus",
+            )
         }
 
         XCTAssertTrue(sawDivergence, "corpus must contain at least one documented_divergence row")
-        XCTAssertTrue(
-            sawPhase2Reconcile,
-            "corpus must contain at least one phase2_reconcile documented_divergence row " +
-                "(the C2-Phase1 discovery of trailing_slash / double_trailing_slash / git_project_id drift)",
-        )
     }
 
     // MARK: - FS-dependent seams (mirror the Rust live-tmpdir tests)

@@ -314,6 +314,7 @@ final class WorkBatchAutoRouterTests: XCTestCase {
         let project = Project(
             name: "capacitor-operator-routing-fixture-20260526",
             path: harness.projectRoot.path,
+            workspaceId: WorkspaceIdentity.fromPath(harness.projectRoot.path),
             displayPath: harness.projectRoot.path,
             lastActive: nil,
             claudeMdPath: nil,
@@ -3208,6 +3209,7 @@ private final class RouterHarness {
         Project(
             name: "Arc Design Studio",
             path: projectRoot.path,
+            workspaceId: WorkspaceIdentity.fromPath(projectRoot.path),
             displayPath: projectRoot.path,
             lastActive: nil,
             claudeMdPath: nil,

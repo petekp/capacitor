@@ -223,9 +223,17 @@ pub(crate) fn build_project_from_path(
 
     let stats = compute_project_stats(&projects_dir, &encoded_name, stats_cache, path);
 
+    // C2-Phase2 EXPOSE: derive the workspace join key the SAME way the
+    // session/routing reducers do — normalize the path, then resolve the
+    // git-aware key via `default_workspace_id` — so the Swift project list can
+    // join against live session/routing state on this key.
+    let normalized_path = crate::domain::normalize_path_for_matching(path);
+    let workspace_id = crate::domain::default_workspace_id(&normalized_path);
+
     Some(Project {
         name: project_name,
         path: path.to_string(),
+        workspace_id,
         display_path,
         last_active,
         claude_md_path: if claude_md_exists {
@@ -254,9 +262,17 @@ fn build_missing_project(path: &str) -> Project {
 
     let project_name = path.split('/').next_back().unwrap_or(path).to_string();
 
+    // C2-Phase2 EXPOSE: even for a missing project the join key must match the
+    // session/routing derivation. `default_workspace_id` falls back to the raw
+    // (normalized) path when the directory does not resolve to a git project,
+    // which is the same fallback the reducers take for absent paths.
+    let normalized_path = crate::domain::normalize_path_for_matching(path);
+    let workspace_id = crate::domain::default_workspace_id(&normalized_path);
+
     Project {
         name: project_name,
         path: path.to_string(),
+        workspace_id,
         display_path,
         last_active: None,
         claude_md_path: None,

@@ -136,9 +136,17 @@ class AppState {
                 )
             }
 
+            // C2-Phase2 SWIFTJOIN (STEP 2b): pass the Rust-provided, git-aware
+            // workspace key for this project so the routing lookup JOINs on the
+            // primary key. `routingView` keeps its normalized path-containment
+            // fallback as the safety net when the key is absent/mismatched.
+            let normalizedProjectPath = PathNormalizer.normalize(projectPath)
+            let projectWorkspaceId = projectState.projects.first(where: {
+                PathNormalizer.normalize($0.path) == normalizedProjectPath
+            })?.workspaceId
             let route = if let cachedRoute = routingStateStore.routingView(
                 projectPath: projectPath,
-                workspaceId: nil,
+                workspaceId: projectWorkspaceId,
             ) {
                 cachedRoute
             } else {

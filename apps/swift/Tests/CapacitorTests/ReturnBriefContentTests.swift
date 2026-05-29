@@ -215,6 +215,7 @@ final class ReturnBriefContentTests: XCTestCase {
         Project(
             name: name,
             path: path,
+            workspaceId: WorkspaceIdentity.fromPath(path),
             displayPath: path,
             lastActive: nil,
             claudeMdPath: nil,

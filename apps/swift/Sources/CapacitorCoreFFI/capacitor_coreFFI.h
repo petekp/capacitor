@@ -462,6 +462,11 @@ void uniffi_capacitor_core_fn_method_coreruntime_update_idea_triage(void*_Nonnul
 RustBuffer uniffi_capacitor_core_fn_method_coreruntime_validate_project(void*_Nonnull ptr, RustBuffer path, RustCallStatus *_Nonnull out_status
 );
 #endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_CAPACITOR_CORE_FN_FUNC_NORMALIZE_PATH_FOR_MATCHING
+#define UNIFFI_FFIDEF_UNIFFI_CAPACITOR_CORE_FN_FUNC_NORMALIZE_PATH_FOR_MATCHING
+RustBuffer uniffi_capacitor_core_fn_func_normalize_path_for_matching(RustBuffer path, RustCallStatus *_Nonnull out_status
+);
+#endif
 #ifndef UNIFFI_FFIDEF_FFI_CAPACITOR_CORE_RUSTBUFFER_ALLOC
 #define UNIFFI_FFIDEF_FFI_CAPACITOR_CORE_RUSTBUFFER_ALLOC
 RustBuffer ffi_capacitor_core_rustbuffer_alloc(uint64_t size, RustCallStatus *_Nonnull out_status
@@ -740,6 +745,12 @@ void ffi_capacitor_core_rust_future_free_void(uint64_t handle
 #ifndef UNIFFI_FFIDEF_FFI_CAPACITOR_CORE_RUST_FUTURE_COMPLETE_VOID
 #define UNIFFI_FFIDEF_FFI_CAPACITOR_CORE_RUST_FUTURE_COMPLETE_VOID
 void ffi_capacitor_core_rust_future_complete_void(uint64_t handle, RustCallStatus *_Nonnull out_status
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_CAPACITOR_CORE_CHECKSUM_FUNC_NORMALIZE_PATH_FOR_MATCHING
+#define UNIFFI_FFIDEF_UNIFFI_CAPACITOR_CORE_CHECKSUM_FUNC_NORMALIZE_PATH_FOR_MATCHING
+uint16_t uniffi_capacitor_core_checksum_func_normalize_path_for_matching(void
+    
 );
 #endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_CAPACITOR_CORE_CHECKSUM_METHOD_CORERUNTIME_ADD_PROJECT

@@ -69,6 +69,22 @@ impl From<&str> for CoreRuntimeError {
     }
 }
 
+/// C2-Phase2 SWIFTJOIN (STEP 3): export the canonical PURE-STRING path matcher so
+/// the Swift side can delegate matching-time normalization to the SAME Rust
+/// implementation the reducers use, eliminating cross-language normalize drift.
+///
+/// This is intentionally the pure-string normalizer (`domain::identity::
+/// normalize_path_for_matching`): it trims trailing slashes and lowercases on
+/// macOS but does NOT touch the filesystem (no symlink resolution, no `.`/`..`
+/// collapsing). FS-touching, capture-time canonicalization stays on whichever
+/// side owns it (Rust `workspace_id` canonicalize; Swift `PathNormalizer` symlink
+/// resolution) — see PathNormalizer for what Swift keeps vs delegates.
+#[uniffi::export]
+#[must_use]
+pub fn normalize_path_for_matching(path: String) -> String {
+    domain::normalize_path_for_matching(&path)
+}
+
 #[derive(uniffi::Object)]
 pub struct CoreRuntime {
     state: Mutex<reduce::ReducerState>,

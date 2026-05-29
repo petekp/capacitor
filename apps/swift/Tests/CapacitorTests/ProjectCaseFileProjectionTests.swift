@@ -200,6 +200,7 @@ final class ProjectCaseFileProjectionTests: XCTestCase {
         Project(
             name: "Capacitor",
             path: "/tmp/capacitor",
+            workspaceId: WorkspaceIdentity.fromPath("/tmp/capacitor"),
             displayPath: "/tmp/capacitor",
             lastActive: nil,
             claudeMdPath: nil,

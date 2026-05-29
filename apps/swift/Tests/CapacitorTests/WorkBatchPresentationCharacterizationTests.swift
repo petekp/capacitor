@@ -1293,6 +1293,7 @@ private final class Harness {
         Project(
             name: "Arc Design Studio",
             path: projectRoot.path,
+            workspaceId: WorkspaceIdentity.fromPath(projectRoot.path),
             displayPath: projectRoot.path,
             lastActive: nil,
             claudeMdPath: nil,

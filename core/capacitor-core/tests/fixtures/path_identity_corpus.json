@@ -32,25 +32,21 @@
     },
     {
       "id": "trailing_slash",
-      "description": "single trailing slash: normalize agrees, but workspace_id DRIFTS cross-language",
+      "description": "single trailing slash: normalize AND workspace_id agree (C2-Phase2 reconciled)",
       "input": "/Users/pete/Code/myrepo/",
-      "agreement": "documented_divergence",
-      "divergence_reason": "normalize AGREES (both languages strip the trailing slash -> /users/pete/code/myrepo), but workspace_id DIVERGES. Rust default_workspace_id(input) = workspace_id(input, input) canonicalize-falls-through to the RAW input and hashes source '/users/pete/code/myrepo/|/users/pete/code/myrepo/' (trailing slash KEPT in BOTH the project_id and the relative half) -> 973dca301891a37acca11bbb72cebfaa. Swift WorkspaceIdentity.fromPath FIRST runs PathNormalizer.normalize (which strips the trailing slash) and hashes source '/users/pete/code/myrepo|/users/pete/code/myrepo' -> 5d699b305e97dd1568da5aaf1ec9a3ab, colliding with plain_abs. Different source string -> different MD5.",
-      "phase2_reconcile": true,
+      "agreement": "must_agree",
       "expected_normalize": "/users/pete/code/myrepo",
-      "expected_default_workspace_id": "973dca301891a37acca11bbb72cebfaa",
-      "note": "CURRENT cross-language drift (not an intentional design divergence). Rescued today only by SessionStateManager runtime path-containment fallbacks. C2-Phase2 must reconcile the key derivations (e.g. normalize the input before hashing on the Rust side, or stop stripping on the Swift side) so a trailing slash cannot fork the workspace_id."
+      "expected_default_workspace_id": "5d699b305e97dd1568da5aaf1ec9a3ab",
+      "note": "C2-Phase2 RECONCILED. Rust workspace_id now runs normalize_path_for_matching on BOTH the project_id and project_path BEFORE hashing (STEP 1b), so a trailing slash is stripped before the source string is built and this row collapses onto plain_abs (5d699b305e97dd1568da5aaf1ec9a3ab). Swift WorkspaceIdentity.fromPath already normalized first, so both sides now agree. Previously this drifted (Rust hashed the RAW '/users/pete/code/myrepo/|/users/pete/code/myrepo/' -> 973dca301891a37acca11bbb72cebfaa) and was rescued only by runtime path-containment fallbacks."
     },
     {
       "id": "double_trailing_slash",
-      "description": "double trailing slash: normalize agrees, but workspace_id DRIFTS cross-language (same root cause as trailing_slash)",
+      "description": "double trailing slash: normalize AND workspace_id agree (C2-Phase2 reconciled, same root cause as trailing_slash)",
       "input": "/Users/pete/Code/myrepo//",
-      "agreement": "documented_divergence",
-      "divergence_reason": "Same root cause as trailing_slash. normalize AGREES (both collapse to /users/pete/code/myrepo) but workspace_id DIVERGES. Rust hashes the RAW double-slash input source '/users/pete/code/myrepo//|/users/pete/code/myrepo//' -> cf208ebfda766c2ba02fc9787c1b986a. Swift normalizes first (slashes stripped) and hashes '/users/pete/code/myrepo|/users/pete/code/myrepo' -> 5d699b305e97dd1568da5aaf1ec9a3ab. Different source string -> different MD5.",
-      "phase2_reconcile": true,
+      "agreement": "must_agree",
       "expected_normalize": "/users/pete/code/myrepo",
-      "expected_default_workspace_id": "cf208ebfda766c2ba02fc9787c1b986a",
-      "note": "CURRENT cross-language drift (not an intentional design divergence). Rescued today only by runtime path-containment fallbacks. Same C2-Phase2 reconcile target as trailing_slash."
+      "expected_default_workspace_id": "5d699b305e97dd1568da5aaf1ec9a3ab",
+      "note": "C2-Phase2 RECONCILED. Same fix as trailing_slash: STEP 1b normalizes the inputs (collapsing the double slash) before hashing, so this collapses onto plain_abs (5d699b305e97dd1568da5aaf1ec9a3ab) and matches Swift. Previously Rust hashed the RAW '/users/pete/code/myrepo//|/users/pete/code/myrepo//' -> cf208ebfda766c2ba02fc9787c1b986a."
     },
     {
       "id": "root",
@@ -91,14 +87,12 @@
     },
     {
       "id": "git_project_id",
-      "description": "a project_id ending in .git (the git-repo common-dir key) used as a bare input to default_workspace_id; workspace_id DRIFTS cross-language",
+      "description": "a project_id ending in .git (the git-repo common-dir key) used as a bare input to default_workspace_id (C2-Phase2 reconcile target)",
       "input": "/Users/pete/Code/myrepo/.git",
-      "agreement": "documented_divergence",
-      "divergence_reason": "normalize AGREES (both keep the literal /users/pete/code/myrepo/.git), but workspace_id DIVERGES because only Rust is .git-aware. Rust default_workspace_id passes the .git path as BOTH project_id and project_path; repo_root_from_project_id detects the trailing '.git' file_name and returns its PARENT (/users/pete/code/myrepo) as repo_root, then workspace_relative_path strip_prefix(repo_root) leaves the relative segment '.git' (NOT empty). So Rust hashes source '/users/pete/code/myrepo/.git|.git' -> ad22cc6998a67d53eb7896bc41da7925. Swift WorkspaceIdentity.fromPath has NO .git awareness; it hashes source '/users/pete/code/myrepo/.git|/users/pete/code/myrepo/.git' -> f11988aa7d1c2ad9f893c462fef23134. Different source string -> different MD5.",
-      "phase2_reconcile": true,
+      "agreement": "must_agree",
       "expected_normalize": "/users/pete/code/myrepo/.git",
       "expected_default_workspace_id": "ad22cc6998a67d53eb7896bc41da7925",
-      "note": "CURRENT cross-language drift (not an intentional design divergence). The Rust hashed source is '/users/pete/code/myrepo/.git|.git' — the relative half is the '.git' segment that survives strip_prefix(repo_root), NOT empty. (A separate, intentional Rust-internal hazard — default_workspace_id of the repo dir vs git-aware workspace_id of the SAME project — is documented in rust_internal_divergence.) C2-Phase2 must give a git project ONE workspace_id regardless of which entry path / language computes it; rescued today only by runtime path-containment fallbacks."
+      "note": "C2-Phase2 reconcile target — now RECONCILED to must_agree. The Rust value is unchanged for THIS static (non-existent) input: default_workspace_id calls resolve_project_identity, which returns None for a path that does not exist on disk, so it falls back to workspace_id(input, input). repo_root_from_project_id detects the trailing '.git' file_name, strip_prefix(repo_root) leaves the relative segment '.git', and Rust hashes source '/users/pete/code/myrepo/.git|.git' -> ad22cc6998a67d53eb7896bc41da7925. The reconciliation that matters operationally is proven by the live-tmpdir test default_workspace_id_converges_to_git_aware_for_same_project (and the rust_internal_divergence block): for a REAL git repo, default_workspace_id resolves the .git common_dir + repo_root and converges onto the git-aware key, so the project-list key equals the session/routing key. As of C2-Phase2, Swift WorkspaceIdentity.fromPath is now .git-aware: it mirrors Rust's repo_root_from_project_id relative-rewrite (trailing '.git' file_name -> relative segment '.git') and hashes the same .git-relative source '/users/pete/code/myrepo/.git|.git', so Swift AGREES with Rust on ad22cc6998a67d53eb7896bc41da7925. The prior .git-unaware Swift value (f11988aa7d1c2ad9f893c462fef23134, from hashing '/users/pete/code/myrepo/.git|/users/pete/code/myrepo/.git') is no longer produced. This row is asserted EQUAL across both languages by the Swift testMustAgreeRowsMatchRust conformance test."
     },
     {
       "id": "plain_dir",
@@ -111,14 +105,14 @@
   ],
   "rust_internal_divergence": {
     "id": "default_vs_git_aware_same_project",
-    "description": "THE CORE C2-PHASE2 HAZARD. For the SAME git project, the pinned-project-list key (default_workspace_id of the repo path, no git resolution) does NOT equal the git-aware workspace_id(common_dir, repo_path).",
+    "description": "C2-PHASE2 RECONCILED. For the SAME git project, the pinned-project-list key (default_workspace_id of the repo path) now AGREES with the git-aware workspace_id(common_dir, repo_path), because default_workspace_id resolves project identity (git common_dir + repo_root) before hashing.",
     "repo_path": "/Users/pete/Code/myrepo",
     "git_common_dir": "/Users/pete/Code/myrepo/.git",
-    "default_workspace_id_of_repo_path": "5d699b305e97dd1568da5aaf1ec9a3ab",
     "git_aware_workspace_id": "cca950078b6f57529eb688528c2a4d7d",
-    "they_match": false,
-    "why": "default_workspace_id hashes source='/users/pete/code/myrepo|/users/pete/code/myrepo' (project_id==project_path, no .git so no relative stripping). git-aware workspace_id hashes source='/users/pete/code/myrepo/.git|' (project_id is the .git common dir, repo_root_from_project_id strips .git making relative empty). Different source string -> different MD5. A project keyed one way will MISS a state keyed the other way unless a fallback rescues it.",
-    "phase2_action": "DEFERRED: C2-Phase2 convergence must reconcile these two key derivations so a git project has ONE workspace_id regardless of entry path."
+    "they_match": true,
+    "why": "STEP 1: default_workspace_id(repo_path) now calls resolve_project_identity, which (for a REAL git repo) returns project_id = the .git common_dir and project_path = the repo_root, then hashes via workspace_id(common_dir, repo_root) -> the SAME source string and MD5 as the git-aware key the session/routing reducers compute (source '/users/pete/code/myrepo/.git|', relative empty after repo_root_from_project_id strips .git, -> cca950078b6f57529eb688528c2a4d7d). The project-list key and the session/routing key are now ONE key for a git project, so a pinned project joins its live session state without relying on path-containment fallbacks.",
+    "proof": "Live-tmpdir Rust tests domain::identity::tests::default_workspace_id_converges_to_git_aware_for_same_project and default_workspace_id_agrees_with_git_aware_for_same_project_c2_phase2 build a real .git repo and assert default_workspace_id(repo_path) == workspace_id(common_dir, repo_root). The literal cca9... value here applies to a repo rooted at /Users/pete/Code/myrepo; the tmpdir tests assert the EQUALITY of the two derivations rather than a fixed hash, since the value is path-dependent.",
+    "note": "The static literal paths could NOT demonstrate this convergence (resolve_project_identity returns None for non-existent paths and falls back to hashing the raw path twice), which is why the proof lives in the live-tmpdir tests. The pre-fix divergent default-of-repo-path value was 5d699b305e97dd1568da5aaf1ec9a3ab."
   },
   "fs_dependent_cases": [
     {

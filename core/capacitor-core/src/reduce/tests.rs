@@ -4978,6 +4978,92 @@ fn recompute_projects_normalizes_path_variants() {
     );
 }
 
+/// C2-Phase2 RECONCILE detachment tripwire (live tmpdir git repo).
+///
+/// A pinned project and an ingested session for the SAME git repo path must
+/// resolve to the SAME `workspace_id`, AND the project<->session-state join must
+/// land (the pinned project carries the session's state and count). The
+/// project-list key is derived via `default_workspace_id` (project.rs) while the
+/// session key is derived git-aware via `resolve_project_identity` +
+/// `workspace_id` (session.rs). If those two derivations fork, a pinned project
+/// silently detaches from its live sessions (it never adopts their state) unless
+/// a runtime path-containment fallback rescues it.
+///
+/// This is the safety net that must STAY GREEN through the convergence: it passes
+/// today (the project<->session join keys on normalized project_path, and the
+/// pre-fix fallback still attaches state) and must keep passing after STEP 1
+/// makes `default_workspace_id` git-aware. Its stronger assertion — that the
+/// pinned project and the session agree on `workspace_id` — is RED-leaning before
+/// the fix for a git repo and GREEN after.
+#[test]
+fn pinned_project_and_session_share_workspace_id_and_join() {
+    let temp_dir = tempfile::tempdir().expect("temp dir");
+    let repo_root = temp_dir.path().join("myrepo");
+    let repo_git = repo_root.join(".git");
+    std::fs::create_dir_all(&repo_git).expect("create git dir");
+    std::fs::write(repo_root.join("CLAUDE.md"), "# repo").expect("project marker");
+    let repo_path = repo_root.to_string_lossy().to_string();
+
+    let mut state = routing_state_fixture(vec![], vec![]);
+
+    // Pin the project (project-list key derivation site, reduce/project.rs).
+    let outcome = state.apply_project_mutation(crate::domain::MutateProjectCommand {
+        kind: crate::domain::ProjectMutationKind::Add,
+        project_path: repo_path.clone(),
+        display_name: None,
+    });
+    assert!(outcome.ok, "project pin failed: {}", outcome.message);
+
+    // Ingest a session (hook event) for the SAME git repo path.
+    let mut event = event_base(HookEventType::PreToolUse);
+    event.session_id = "session-git".to_string();
+    event.project_path = repo_path.clone();
+    event.cwd = Some(repo_path.clone());
+    let outcome = state.apply_hook_event(event);
+    assert!(outcome.ok, "hook ingest failed: {}", outcome.message);
+
+    let snapshot = state.snapshot();
+
+    let session = snapshot
+        .sessions
+        .iter()
+        .find(|s| s.session_id == "session-git")
+        .expect("session present");
+    let project = snapshot
+        .projects
+        .iter()
+        .find(|p| p.project_path == session.project_path)
+        .expect("pinned project joins on normalized project_path");
+
+    // The detachment tripwire: identical workspace_id across the project-list key
+    // and the session/routing key for the same git project.
+    assert_eq!(
+        project.workspace_id, session.workspace_id,
+        "pinned project workspace_id must equal the session workspace_id for the same git project"
+    );
+
+    // The project<->session-state join must land: the pinned project adopts the
+    // session's active state and counts it.
+    assert_eq!(
+        project.session_count, 1,
+        "pinned project must count the ingested session"
+    );
+    assert!(
+        project.has_session,
+        "pinned project must report it has a session"
+    );
+    assert!(
+        project.state.is_active(),
+        "pinned project must adopt the session's active state (got {:?})",
+        project.state
+    );
+    assert_eq!(
+        project.representative_session_id.as_deref(),
+        Some("session-git"),
+        "pinned project must elect the ingested session as representative"
+    );
+}
+
 #[test]
 fn gc_does_not_touch_alive_sessions() {
     // A Working session with recent last_activity_at should not be

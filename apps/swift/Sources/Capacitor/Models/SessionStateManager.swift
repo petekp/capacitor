@@ -512,16 +512,23 @@ final class SessionStateManager {
             guard !seen.contains(normalized) else { continue }
             seen.insert(normalized)
             let depth = normalized.split(separator: "/").count
+            // C2-Phase2 SWIFTJOIN (STEP 2b): JOIN on the Rust-provided, git-aware
+            // workspace key carried on the Project FFI record instead of
+            // recomputing the project-side key via GitRepositoryInfo /
+            // WorkspaceIdentity. The Rust `default_workspace_id` already resolved
+            // git identity for this project, so reading `project.workspaceId`
+            // converges the project-list key onto the SAME key the session/routing
+            // reducers emit. We still resolve `repoInfo` because the common-dir
+            // fallback in `matchesProject` and the repo-key index below depend on
+            // it as a safety net for stale-persisted state / residual mismatch.
             let repoInfo = GitRepositoryInfo.resolve(for: project.path)
-            let workspaceId = repoInfo.map { WorkspaceIdentity.fromGitInfo($0) }
-                ?? WorkspaceIdentity.fromPath(project.path)
             projectInfos.append(
                 ProjectMatchInfo(
                     project: project,
                     normalizedPath: normalized,
                     depth: depth,
                     repoInfo: repoInfo,
-                    workspaceId: workspaceId,
+                    workspaceId: project.workspaceId,
                 ),
             )
         }

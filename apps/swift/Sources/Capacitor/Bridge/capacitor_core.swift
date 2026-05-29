@@ -4508,6 +4508,13 @@ public func FfiConverterTypePluginManifest_lower(_ value: PluginManifest) -> Rus
 public struct Project {
     public var name: String
     public var path: String
+    /**
+     * Canonical, git-aware workspace join key (MD5 of the resolved project
+     * identity). Derived via the SAME `default_workspace_id` helper the
+     * session/routing reducers use, so the Swift side can join the project
+     * list against live session/routing state on this key.
+     */
+    public var workspaceId: String
     public var displayPath: String
     public var lastActive: String?
     public var claudeMdPath: String?
@@ -4522,13 +4529,20 @@ public struct Project {
 
     /// Default memberwise initializers are never public by default, so we
     /// declare one manually.
-    public init(name: String, path: String, displayPath: String, lastActive: String?, claudeMdPath: String?, claudeMdPreview: String?, hasLocalSettings: Bool, taskCount: UInt32, stats: ProjectStats?,
+    public init(name: String, path: String,
+                /* 
+                    * Canonical, git-aware workspace join key (MD5 of the resolved project
+                    * identity). Derived via the SAME `default_workspace_id` helper the
+                    * session/routing reducers use, so the Swift side can join the project
+                    * list against live session/routing state on this key.
+                    */ workspaceId: String, displayPath: String, lastActive: String?, claudeMdPath: String?, claudeMdPreview: String?, hasLocalSettings: Bool, taskCount: UInt32, stats: ProjectStats?,
                 /* 
                     * True if the project directory no longer exists on disk.
                     */ isMissing: Bool)
     {
         self.name = name
         self.path = path
+        self.workspaceId = workspaceId
         self.displayPath = displayPath
         self.lastActive = lastActive
         self.claudeMdPath = claudeMdPath
@@ -4546,6 +4560,9 @@ extension Project: Equatable, Hashable {
             return false
         }
         if lhs.path != rhs.path {
+            return false
+        }
+        if lhs.workspaceId != rhs.workspaceId {
             return false
         }
         if lhs.displayPath != rhs.displayPath {
@@ -4578,6 +4595,7 @@ extension Project: Equatable, Hashable {
     public func hash(into hasher: inout Hasher) {
         hasher.combine(name)
         hasher.combine(path)
+        hasher.combine(workspaceId)
         hasher.combine(displayPath)
         hasher.combine(lastActive)
         hasher.combine(claudeMdPath)
@@ -4598,6 +4616,7 @@ public struct FfiConverterTypeProject: FfiConverterRustBuffer {
             try Project(
                 name: FfiConverterString.read(from: &buf),
                 path: FfiConverterString.read(from: &buf),
+                workspaceId: FfiConverterString.read(from: &buf),
                 displayPath: FfiConverterString.read(from: &buf),
                 lastActive: FfiConverterOptionString.read(from: &buf),
                 claudeMdPath: FfiConverterOptionString.read(from: &buf),
@@ -4612,6 +4631,7 @@ public struct FfiConverterTypeProject: FfiConverterRustBuffer {
     public static func write(_ value: Project, into buf: inout [UInt8]) {
         FfiConverterString.write(value.name, into: &buf)
         FfiConverterString.write(value.path, into: &buf)
+        FfiConverterString.write(value.workspaceId, into: &buf)
         FfiConverterString.write(value.displayPath, into: &buf)
         FfiConverterOptionString.write(value.lastActive, into: &buf)
         FfiConverterOptionString.write(value.claudeMdPath, into: &buf)
@@ -9989,6 +10009,26 @@ private struct FfiConverterDictionaryStringTypeCachedProjectStats: FfiConverterR
     }
 }
 
+/**
+ * C2-Phase2 SWIFTJOIN (STEP 3): export the canonical PURE-STRING path matcher so
+ * the Swift side can delegate matching-time normalization to the SAME Rust
+ * implementation the reducers use, eliminating cross-language normalize drift.
+ *
+ * This is intentionally the pure-string normalizer (`domain::identity::
+ * normalize_path_for_matching`): it trims trailing slashes and lowercases on
+ * macOS but does NOT touch the filesystem (no symlink resolution, no `.`/`..`
+ * collapsing). FS-touching, capture-time canonicalization stays on whichever
+ * side owns it (Rust `workspace_id` canonicalize; Swift `PathNormalizer` symlink
+ * resolution) — see PathNormalizer for what Swift keeps vs delegates.
+ */
+public func normalizePathForMatching(path: String) -> String {
+    return try! FfiConverterString.lift(try! rustCall {
+        uniffi_capacitor_core_fn_func_normalize_path_for_matching(
+            FfiConverterString.lower(path), $0
+        )
+    })
+}
+
 private enum InitializationResult {
     case ok
     case contractVersionMismatch
@@ -10004,6 +10044,9 @@ private var initializationResult: InitializationResult = {
     let scaffolding_contract_version = ffi_capacitor_core_uniffi_contract_version()
     if bindings_contract_version != scaffolding_contract_version {
         return InitializationResult.contractVersionMismatch
+    }
+    if uniffi_capacitor_core_checksum_func_normalize_path_for_matching() != 2929 {
+        return InitializationResult.apiChecksumMismatch
     }
     if uniffi_capacitor_core_checksum_method_coreruntime_add_project() != 46746 {
         return InitializationResult.apiChecksumMismatch

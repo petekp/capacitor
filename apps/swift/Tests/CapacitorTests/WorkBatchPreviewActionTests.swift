@@ -320,6 +320,7 @@ private final class PreviewActionHarness {
         Project(
             name: "Capacitor",
             path: projectRoot.path,
+            workspaceId: WorkspaceIdentity.fromPath(projectRoot.path),
             displayPath: projectRoot.path,
             lastActive: nil,
             claudeMdPath: nil,
