@@ -5,9 +5,16 @@ on:
     branches:
       - main
       - "pkp/**"
+    tags:
+      - "v*"
   pull_request:
     branches: [main]
   workflow_dispatch:
+  schedule:
+    # Nightly extended pass (09:00 UTC): runs the user-facing / release-time
+    # gates (AX GUI lane, release-smoke build, release-script bats) that are
+    # gated off the per-PR path. Per-PR keeps only the agent-drift guardrails.
+    - cron: "0 9 * * *"
 
 permissions:
   contents: read
@@ -84,10 +91,16 @@ jobs:
       - name: Install bats
         run: brew install bats-core
 
+      # Agent-drift guardrail: dev-script bats cover restart-*.sh (the agent
+      # iteration path), so they run on every PR.
       - name: Run dev script tests
         run: bats tests/dev-scripts
 
+      # Extended (non-per-PR) gate: release-script bats cover release/AX
+      # machinery (bump-version, generate-appcast, ax-automation-verify). Gated
+      # to nightly / manual dispatch / v* tags; skipped on ordinary PRs.
       - name: Run release script tests
+        if: ${{ github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/v') }}
         run: bats tests/release-scripts
 
   test-rust:
@@ -198,10 +211,14 @@ jobs:
     name: AX Automation (advisory)
     runs-on: macos-15
     needs: test-surface-audit
-    # Advisory lane: the AX verifier is inherently flaky (UI automation), so it
-    # must not block merges. Split out of the Runtime Reliability Gate so a flaky
-    # AX run can no longer shadow the deterministic projection-parity gate under
-    # `set -e`. Builds its own release artifacts via prepare_ax_verifier_build.
+    # Extended (non-per-PR) gate: the AX GUI lane is user-facing/release-time work
+    # and is inherently flaky (UI automation). It only runs nightly, on manual
+    # dispatch, or on v* tags — never on ordinary PRs/branch pushes. Still
+    # advisory (continue-on-error) when it does run. Split out of the Runtime
+    # Reliability Gate so a flaky AX run can no longer shadow the deterministic
+    # projection-parity gate under `set -e`. Builds its own release artifacts via
+    # prepare_ax_verifier_build.
+    if: ${{ github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/v') }}
     continue-on-error: true
     timeout-minutes: 20
     steps:
@@ -283,16 +300,31 @@ jobs:
       - name: Build Rust library
         run: cargo build -p capacitor-core --release
 
+      # Agent-drift guardrail (NOT release machinery): agents change UniFFI FFI
+      # shapes constantly, so the binding-drift check must run on every PR. It
+      # only needs the release dylib that the step above just built (it runs
+      # uniffi-bindgen against the library), so this is nearly free here. Moved
+      # out of the gated release-smoke job to keep it on the per-PR path.
+      - name: Check UniFFI bindings are fresh
+        run: ./scripts/ci/check-uniffi-bindings.sh
+
       - name: Run Swift tests
         # Broad run skips the six cross-suite-flaky suites, then each is run in
         # isolation (fresh process) to eliminate MainActor/shared-state leakage.
         # Full coverage preserved. See scripts/ci/swift-test.sh for details.
         run: ./scripts/ci/swift-test.sh
 
-  build-smoke-test:
-    name: Build Smoke Test
+  release-smoke:
+    name: Release Smoke Test
     runs-on: macos-15
     needs: [test-rust, test-swift]
+    # Extended (non-per-PR) gate: what remains here after relocating the UniFFI
+    # drift guard to test-swift is release machinery (release Swift build,
+    # version-sync check, bump-version dry-run). It only runs nightly, on manual
+    # dispatch, or on v* tags. Skipped on ordinary PRs/branch pushes (no cost).
+    # GitHub treats a skipped `needs:` as satisfied for downstream gated jobs,
+    # and no per-PR job needs this one, so the skip is non-blocking.
+    if: ${{ github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/v') }}
     steps:
       - uses: actions/checkout@v6
 
@@ -324,9 +356,10 @@ jobs:
       - name: Build Rust library (release)
         run: cargo build -p capacitor-core --release
 
-      - name: Check UniFFI bindings are fresh
-        run: ./scripts/ci/check-uniffi-bindings.sh
-
+      # Note: the UniFFI binding-drift check lives in test-swift now (per-PR
+      # agent guardrail). The dylib install_name fix/verify below is release
+      # machinery — a prerequisite for linking the dylib into the release Swift
+      # build, not for binding generation — so it stays in this gated job.
       - name: Fix dylib install_name
         run: ./scripts/dev/fix-dylib.sh
 
