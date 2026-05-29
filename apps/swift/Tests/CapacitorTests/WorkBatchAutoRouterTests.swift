@@ -569,7 +569,7 @@ final class WorkBatchAutoRouterTests: XCTestCase {
         } catch {
             let state = try harness.stateStore.load()
             XCTAssertEqual(state.batches.first?.status, .waiting)
-            XCTAssertEqual(state.batches.first?.currentActivitySummary, "Claude Code launch needs attention.")
+            XCTAssertEqual(state.batches.first?.attentionReason, .launchFailed)
             XCTAssertEqual(state.tasks.first(where: { $0.id == "idea-green" })?.status, .queued)
         }
     }
@@ -1412,7 +1412,7 @@ final class WorkBatchAutoRouterTests: XCTestCase {
         XCTAssertEqual(state.tasks.first?.status, .queued)
         XCTAssertEqual(state.batches.first?.status, .waiting)
         XCTAssertEqual(
-            state.batches.first?.currentActivitySummary,
+            try harness.derivedSummary(batchID: "batch-mobile"),
             "Claude Code has not picked up Adjust mobile spacing yet. Click to re-enter.",
         )
         XCTAssertEqual(
@@ -1468,7 +1468,7 @@ final class WorkBatchAutoRouterTests: XCTestCase {
 
         let state = try harness.stateStore.load()
         XCTAssertEqual(state.batches.first?.status, .waiting)
-        XCTAssertEqual(state.batches.first?.currentActivitySummary, "Claude Code launch needs attention.")
+        XCTAssertEqual(state.batches.first?.attentionReason, .launchFailed)
         XCTAssertEqual(state.tasks.first?.status, .queued)
         XCTAssertTrue(try harness.bindingStore.load().isEmpty)
     }
@@ -2237,7 +2237,8 @@ final class WorkBatchAutoRouterTests: XCTestCase {
         XCTAssertTrue(scripts.isEmpty)
         let state = try harness.stateStore.load()
         XCTAssertEqual(state.batches.first?.status, .waiting)
-        XCTAssertEqual(state.batches.first?.currentActivitySummary, "Multiple Claude Code sessions match this Work Batch.")
+        XCTAssertEqual(state.batches.first?.attentionReason, .duplicateCockpit(assignedProcessDuplicate: false))
+        XCTAssertEqual(try harness.derivedSummary(batchID: "batch-mobile"), "Multiple Claude Code sessions match this Work Batch.")
         XCTAssertEqual(state.tasks.first(where: { $0.id == "idea-green" })?.status, .queued)
     }
 
@@ -2286,7 +2287,8 @@ final class WorkBatchAutoRouterTests: XCTestCase {
         XCTAssertTrue(scripts.isEmpty)
         let state = try harness.stateStore.load()
         XCTAssertEqual(state.batches.first?.status, .waiting)
-        XCTAssertEqual(state.batches.first?.currentActivitySummary, "Claude Code is already open; click to re-enter.")
+        XCTAssertEqual(state.batches.first?.attentionReason, .duplicateCockpit(assignedProcessDuplicate: true))
+        XCTAssertEqual(try harness.derivedSummary(batchID: "batch-mobile"), "Claude Code is already open; click to re-enter.")
         XCTAssertEqual(state.tasks.first(where: { $0.id == "idea-green" })?.status, .queued)
     }
 
@@ -2347,7 +2349,7 @@ final class WorkBatchAutoRouterTests: XCTestCase {
         XCTAssertTrue(scripts.isEmpty)
         let updatedState = try harness.stateStore.load()
         XCTAssertEqual(updatedState.batches.first?.status, .waiting)
-        XCTAssertEqual(updatedState.batches.first?.currentActivitySummary, "Checkpoint ready: Which green token should I use?")
+        XCTAssertEqual(try harness.derivedSummary(batchID: "batch-mobile"), "Checkpoint ready: Which green token should I use?")
         XCTAssertEqual(updatedState.tasks.first(where: { $0.id == "idea-old" })?.status, .needsYou)
         XCTAssertEqual(updatedState.tasks.first(where: { $0.id == "idea-green" })?.status, .queued)
         XCTAssertEqual(updatedState.checkpoints.first?.status, .pending)
@@ -3246,6 +3248,17 @@ private final class RouterHarness {
             triage: "pending",
             related: nil,
         )
+    }
+
+    /// Projects the persisted state through the single presentation derivation
+    /// the home UI consumes. The reducer now records structural facts (status +
+    /// attentionReason); the displayed summary is asserted via the projection.
+    func derivedSummary(batchID: String) throws -> String? {
+        let state = try stateStore.load()
+        let bindings = try bindingStore.load()
+        return WorkBatchProjectionBuilder.build(state: state, bindings: bindings)
+            .first(where: { $0.id == batchID })?
+            .currentActivitySummary
     }
 
     func worktreeService(expectedName: String) -> WorktreeService {
