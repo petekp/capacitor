@@ -141,7 +141,7 @@ final class PathNormalizerConformanceTests: XCTestCase {
 
         XCTAssertTrue(
             FileManager.default.fileExists(atPath: corpusURL.path),
-            "shared corpus not found at \(corpusURL.path) — did the Rust stage move it?"
+            "shared corpus not found at \(corpusURL.path) — did the Rust stage move it?",
         )
 
         let data = try Data(contentsOf: corpusURL)
@@ -177,7 +177,7 @@ final class PathNormalizerConformanceTests: XCTestCase {
                 swiftNormalize,
                 row.expectedNormalize,
                 "NORMALIZE DRIFT (must_agree) row \(row.id) input \(row.input): " +
-                    "Swift produced \(swiftNormalize), Rust expected \(row.expectedNormalize)"
+                    "Swift produced \(swiftNormalize), Rust expected \(row.expectedNormalize)",
             )
             XCTAssertEqual(
                 swiftWorkspaceId,
@@ -185,7 +185,7 @@ final class PathNormalizerConformanceTests: XCTestCase {
                 "WORKSPACE_ID DRIFT (must_agree) row \(row.id) input \(row.input): " +
                     "Swift produced \(swiftWorkspaceId), Rust expected \(row.expectedDefaultWorkspaceId). " +
                     "If this is a real, currently-unavoidable cross-language drift, RECLASSIFY the " +
-                    "corpus row to documented_divergence (+ phase2_reconcile) rather than asserting equality."
+                    "corpus row to documented_divergence (+ phase2_reconcile) rather than asserting equality.",
             )
         }
 
@@ -220,7 +220,7 @@ final class PathNormalizerConformanceTests: XCTestCase {
                 XCTFail(
                     "documented_divergence row \(row.id) is not pinned in this test — " +
                         "add its CURRENT Swift normalize + workspace_id value and cite the reason: " +
-                        (row.divergenceReason ?? "(no reason recorded)")
+                        (row.divergenceReason ?? "(no reason recorded)"),
                 )
                 continue
             }
@@ -230,13 +230,13 @@ final class PathNormalizerConformanceTests: XCTestCase {
                 swiftNormalize,
                 pinnedNormalize,
                 "Swift normalize for documented_divergence row \(row.id) moved off its " +
-                    "pinned value \(pinnedNormalize) (now \(swiftNormalize))"
+                    "pinned value \(pinnedNormalize) (now \(swiftNormalize))",
             )
             XCTAssertEqual(
                 swiftWorkspaceId,
                 pinnedWorkspaceId,
                 "Swift workspace_id for documented_divergence row \(row.id) moved off its " +
-                    "pinned value \(pinnedWorkspaceId) (now \(swiftWorkspaceId))"
+                    "pinned value \(pinnedWorkspaceId) (now \(swiftWorkspaceId))",
             )
 
             // The workspace_id divergence vs the Rust source of truth must STILL
@@ -246,7 +246,7 @@ final class PathNormalizerConformanceTests: XCTestCase {
                 swiftWorkspaceId,
                 row.expectedDefaultWorkspaceId,
                 "documented_divergence row \(row.id) workspace_id CONVERGED with Rust " +
-                    "(\(row.expectedDefaultWorkspaceId)) — reclassify the corpus row to must_agree"
+                    "(\(row.expectedDefaultWorkspaceId)) — reclassify the corpus row to must_agree",
             )
 
             // For the by-design `.`/`..` rows, normalize ALSO diverges by
@@ -257,7 +257,7 @@ final class PathNormalizerConformanceTests: XCTestCase {
                     swiftNormalize,
                     row.expectedNormalize,
                     "by-design documented_divergence row \(row.id) normalize CONVERGED with Rust " +
-                        "(\(row.expectedNormalize)) — reclassify the corpus row to must_agree"
+                        "(\(row.expectedNormalize)) — reclassify the corpus row to must_agree",
                 )
             }
 
@@ -269,7 +269,7 @@ final class PathNormalizerConformanceTests: XCTestCase {
                     "C2-PHASE2 RECONCILE TARGET: documented_divergence row \(row.id) DISAGREES on " +
                         "workspace_id (Rust expected \(row.expectedDefaultWorkspaceId), Swift produced " +
                         "\(swiftWorkspaceId)) — current cross-language drift, rescued today only by " +
-                        "runtime path-containment fallbacks."
+                        "runtime path-containment fallbacks.",
                 )
             }
         }
@@ -278,7 +278,7 @@ final class PathNormalizerConformanceTests: XCTestCase {
         XCTAssertTrue(
             sawPhase2Reconcile,
             "corpus must contain at least one phase2_reconcile documented_divergence row " +
-                "(the C2-Phase1 discovery of trailing_slash / double_trailing_slash / git_project_id drift)"
+                "(the C2-Phase1 discovery of trailing_slash / double_trailing_slash / git_project_id drift)",
         )
     }
 
@@ -334,7 +334,7 @@ final class PathNormalizerConformanceTests: XCTestCase {
         XCTAssertFalse(
             linkNormalize.hasSuffix("/linkdir"),
             "Expected Swift normalize to RESOLVE the on-disk symlink (Rust keeps the link " +
-                "string; Swift resolves it via resolvingSymlinksInPath), but got \(linkNormalize)"
+                "string; Swift resolves it via resolvingSymlinksInPath), but got \(linkNormalize)",
         )
 
         // CURRENT Swift behavior, pinned + documented:
@@ -345,7 +345,7 @@ final class PathNormalizerConformanceTests: XCTestCase {
             targetNormalize,
             "Swift normalize should resolve the symlink so link and target normalize equally " +
                 "(this is the Rust-vs-Swift seam: Rust normalize KEEPS the link string, see Rust " +
-                "test corpus_fs_dependent_symlink_normalize_keeps_link_workspace_id_resolves)"
+                "test corpus_fs_dependent_symlink_normalize_keeps_link_workspace_id_resolves)",
         )
         //   * workspace_id collapses link == target (like Rust, but via normalize
         //     rather than via canonicalize inside workspace_id).
@@ -353,7 +353,7 @@ final class PathNormalizerConformanceTests: XCTestCase {
             linkWorkspaceId,
             targetWorkspaceId,
             "Swift workspace_id should collapse link and target (matches Rust's canonicalize-based " +
-                "collapse, though Swift collapses earlier inside normalize)"
+                "collapse, though Swift collapses earlier inside normalize)",
         )
     }
 
@@ -382,7 +382,7 @@ final class PathNormalizerConformanceTests: XCTestCase {
             "Worktree stability is owned by the Rust test workspace_id_is_stable_across_worktrees; " +
                 "a real linked git worktree cannot be constructed deterministically in the Swift " +
                 "unit-test environment. Acknowledged gap (see git_worktree_stability corpus row), " +
-                "not a silent omission."
+                "not a silent omission.",
         )
     }
 }

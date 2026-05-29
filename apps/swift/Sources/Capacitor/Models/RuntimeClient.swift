@@ -446,12 +446,12 @@ final class RuntimeClient {
             "RuntimeClient.\(operation) source=\(runtimeSourceLabel) cid=\(cid) projects=\(projectStates.count) sessions=\(sessions.count) shells=\(shellState.shells.count) runs=\(runs.count)",
         )
 
-        return RuntimeSnapshot(
+        return try RuntimeSnapshot(
             projectStates: projectStates,
             sessions: sessions,
             shellState: shellState,
-            routingViews: try mapRoutingViews(snapshot),
-            delegations: try mapDelegations(snapshot),
+            routingViews: mapRoutingViews(snapshot),
+            delegations: mapDelegations(snapshot),
             runs: runs,
             changeVersion: snapshot.changeVersion,
         )
@@ -459,11 +459,11 @@ final class RuntimeClient {
 
     private func mapProjectStates(_ snapshot: SnapshotPayload) throws -> [RuntimeProjectState] {
         try snapshot.projects.map { project in
-            RuntimeProjectState(
+            try RuntimeProjectState(
                 projectId: project.projectId,
                 workspaceId: project.workspaceId,
                 projectPath: project.projectPath,
-                state: try SessionState.decode(wire: project.state),
+                state: SessionState.decode(wire: project.state),
                 updatedAt: project.updatedAt,
                 stateChangedAt: project.stateChangedAt,
                 sessionId: project.representativeSessionId,
@@ -477,10 +477,10 @@ final class RuntimeClient {
 
     private func mapSessions(_ snapshot: SnapshotPayload) throws -> [RuntimeSession] {
         try snapshot.sessions.map { session in
-            RuntimeSession(
+            try RuntimeSession(
                 sessionId: session.sessionId,
                 pid: session.pid,
-                state: try SessionState.decode(wire: session.state),
+                state: SessionState.decode(wire: session.state),
                 cwd: session.cwd,
                 projectId: session.projectId,
                 workspaceId: session.workspaceId,
@@ -535,10 +535,10 @@ final class RuntimeClient {
 
     private func mapRoutingViews(_ snapshot: SnapshotPayload) throws -> [RuntimeRoutingView] {
         try snapshot.routing.map { route in
-            RuntimeRoutingView(
+            try RuntimeRoutingView(
                 workspaceId: route.workspaceId,
                 projectPath: route.projectPath,
-                status: try RoutingStatus.decode(wire: route.status),
+                status: RoutingStatus.decode(wire: route.status),
                 target: route.target,
                 reasonCode: normalizeReasonCode(route.reasonCode),
                 reason: route.reason,
@@ -549,14 +549,14 @@ final class RuntimeClient {
 
     private func mapDelegations(_ snapshot: SnapshotPayload) throws -> [RuntimeDelegationState] {
         try snapshot.delegations.map { delegation in
-            RuntimeDelegationState(
+            try RuntimeDelegationState(
                 projectPath: delegation.projectPath,
                 workerId: delegation.workerId,
                 ideaId: delegation.ideaId,
                 worktreeName: delegation.worktreeName,
                 worktreePath: delegation.worktreePath,
                 sessionId: delegation.sessionId,
-                status: try DelegationStatus.decode(wire: delegation.status),
+                status: DelegationStatus.decode(wire: delegation.status),
                 startedAt: delegation.startedAt,
                 updatedAt: delegation.updatedAt,
                 submittedMilestoneId: delegation.submittedMilestoneId,
@@ -1117,10 +1117,10 @@ private extension RuntimeRunState {
         delegationWorkerId = payload.delegationWorkerId
         statusMessage = payload.statusMessage
         phases = try payload.phases.map { phase in
-            RuntimePhaseInstance(
+            try RuntimePhaseInstance(
                 id: phase.id,
                 name: phase.name,
-                status: try PhaseStatus.decode(wire: phase.status),
+                status: PhaseStatus.decode(wire: phase.status),
                 startedAt: phase.startedAt,
                 completedAt: phase.completedAt,
             )

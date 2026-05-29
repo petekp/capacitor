@@ -237,7 +237,7 @@ final class WorkBatchPreviewActionTests: XCTestCase {
     /// `refreshPreviewSensitiveProjections` must re-publish the projection when
     /// the live state changes — otherwise the UI would freeze a stale "Bring
     /// Preview Forward" / disabled state.
-    func testRefreshPreviewSensitiveProjectionsUpdatesCacheWhenPreviewStops() async throws {
+    func testRefreshPreviewSensitiveProjectionsUpdatesCacheWhenPreviewStops() throws {
         let harness = try PreviewActionHarness()
         try harness.seedBatch(withBinding: true)
         try harness.makeCapacitorPreviewCapable(at: harness.worktreeRoot)
