@@ -17,6 +17,22 @@ Use this file only for recent migration context and retired seams that still mat
 
 Key files: `core/capacitor-core/src/domain/types.rs`, `core/capacitor-core/src/reduce/event_handler.rs`, `core/hud-hook/src/liveness.rs`, `apps/swift/Sources/Capacitor/Models/WorkBatchBindingReconciler.swift`, `apps/swift/Sources/Capacitor/Models/WorkBatchAutoRouter.swift`, `apps/swift/Sources/Capacitor/Models/RuntimeClient.swift`.
 
+### 2026-05-28 — workspace_id Convergence: Swift Joins on the Rust Key (C2-Phase2)
+
+**Join key (C2-Phase2).** `Project.workspace_id` is now part of the `Project` FFI record, and `default_workspace_id` is git-aware: it resolves project identity (git common-dir aware), then hashes via a normalize-before-hash `workspace_id`. The single pure-string path matcher is exported once over UniFFI as `normalize_path_for_matching`, so Swift joins sessions↔routing↔projects on the **Rust-derived** key instead of re-deriving it. Swift retains its own symlink resolution and the `matchesProject` path-containment fallbacks (parent/self-excluding-home + git common-dir) — these are essential complexity and were deliberately kept. The path-identity corpus `phase2_reconcile` rows flipped from `documented_divergence` to `must_agree` and run green; the Rust-internal `default_workspace_id`-vs-git-aware key divergence is closed.
+
+Agent impact: `workspace_id` is the cross-surface join key — derive it from the Rust side (`normalize_path_for_matching` / the FFI `workspace_id`); do not re-implement path canonicalization in Swift. Reduce-path identity stays pure-string (replay-deterministic); capture-time FS-touching canonicalization is a separate concern.
+
+Key files: `core/capacitor-core/src/domain/identity.rs`, `core/capacitor-core/src/runtime/types.rs`, `core/capacitor-core/src/lib.rs`, `apps/swift/Sources/Capacitor/Models/WorkspaceIdentity.swift`, `apps/swift/Sources/Capacitor/Models/PathNormalizer.swift`, `apps/swift/Sources/Capacitor/Models/SessionStateManager.swift`, `core/capacitor-core/tests/fixtures/path_identity_corpus.json`.
+
+### 2026-05-28 — MutateRunCommand Is Now a Typed Sum Type (D4-Tier2)
+
+**Run mutation type (D4-Tier2).** `RunMutationKind` is now a Rust enum-with-fields (one variant per kind) and `MutateRunCommand` is a thin `{ project_path, run_id, kind }` record. The wire shape stays FLAT: a hand-written `Serialize`/`Deserialize` projects through a private flat DTO (`{kind, project_path, run_id, …variant fields}`), replacing the earlier fragile internally-tagged + `flatten` codec (which content-buffered and mis-decoded). The reducer (`apply_run_mutation`) destructures every variant. A wire-contract oracle (`tests/run_mutation_wire_contract.rs`) pins deserialization, serialization, and per-kind reducer behavior across all 16 kinds plus the `checkpoint_decision_relay` asymmetry (only the checkpoint bridge sets it; the Swift struct has no key for it).
+
+Agent impact: construct run mutations via the typed `RunMutationKind` variants, not a flat bag of optionals. A new kind needs a variant, a reducer arm, a serialize/deserialize entry, and an oracle case — the oracle's exact-key-set assertions fail loudly if the wire desyncs. FFI-shape edits here require a UniFFI regen in the same commit.
+
+Key files: `core/capacitor-core/src/domain/run_types.rs`, `core/capacitor-core/src/reduce/run_reducer.rs`, `core/capacitor-core/src/core_ingest.rs`, `core/capacitor-core/tests/run_mutation_wire_contract.rs`, `apps/swift/Sources/Capacitor/Bridge/capacitor_core.swift`.
+
 ### 2026-04-19 — Run Checkpoint Timeline Durability Closed Out
 
 **Checkpoint history and Project Detail timeline** (PRs #45-#52, `3ac525a9..25df1b94`): run checkpoints now have runtime-owned durable history. The Rust run kernel archives decided checkpoints in `past_checkpoints`, assigns monotonic `history_ordinal` values from `RunState.next_checkpoint_history_ordinal`, preserves ordinals through restart/truncation/legacy snapshots, and keeps the most recent 50 decided checkpoints per run. Swift decodes that snapshot state and Project Detail renders the latest run with checkpoint history from `past_checkpoints` plus any current `activeCheckpoint`; it uses `historyOrdinal` for timeline order and row identity when present and derives only display labels/round numbers in Swift.

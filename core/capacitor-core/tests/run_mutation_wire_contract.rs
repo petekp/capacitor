@@ -1205,3 +1205,206 @@ fn cancel_frame_marks_run_cancelled() {
     let run = run.expect("cancelled run exists");
     assert_eq!(run.status, RunStatus::Cancelled);
 }
+
+// ---------------------------------------------------------------------------
+// 4. SERIALIZE-side oracle. The hand-written `impl Serialize for
+//    MutateRunCommand` (run_types.rs) emits the FLAT wire object that the
+//    production Rust producers (run_status_reporter.rs, checkpoint_bridge.rs)
+//    actually put on the HTTP boundary. The deserialization oracle above does
+//    NOT exercise this path, so a future edit to the per-variant
+//    `serialize_entry` list (or the `payload_len` hint) could silently desync
+//    the wire. These tests pin the emitted shape:
+//
+//      - the JSON is a FLAT object (no nesting, no `{ "kind": { ... } }` tag),
+//      - its EXACT key set equals {kind, project_path, run_id, ...variant
+//        fields} (full-set assertion: an added OR removed field fails),
+//      - the `kind` tag string is the expected discriminator,
+//      - round-trip: deserialize(serialize(cmd)) == cmd (identity).
+//
+//    Inputs are decoded from the representative producer frames above so the
+//    serialize oracle stays anchored to real on-the-wire shapes.
+// ---------------------------------------------------------------------------
+
+/// Per-kind serialize expectations, anchored to a representative producer frame.
+///
+/// Each entry is `(label, source_frame, expected_kind_tag, expected_keys)`.
+/// `expected_keys` is the COMPLETE set of top-level keys the flat wire object
+/// must carry for that kind — the 3 framing keys plus exactly that variant's
+/// payload fields. Asserting the full set means an added or removed
+/// `serialize_entry` in the hand-written impl trips this oracle.
+const SERIALIZE_CASES: &[(&str, &str, &str, &[&str])] = &[
+    // Zero-payload kind: only the 3 framing keys.
+    (
+        "advance_phase",
+        ADVANCE_PHASE_RUST,
+        "advance_phase",
+        &["kind", "project_path", "run_id"],
+    ),
+    // Second zero-payload kind for symmetry.
+    (
+        "detach_session",
+        DETACH_SESSION_RUST,
+        "detach_session",
+        &["kind", "project_path", "run_id"],
+    ),
+    // Status-family kind (single `status_message` payload field).
+    (
+        "complete",
+        COMPLETE_RUST,
+        "complete",
+        &["kind", "project_path", "run_id", "status_message"],
+    ),
+    // The riskiest producer kind: 10 payload fields, the only one carrying
+    // `checkpoint_decision_relay` (set to "checkpoint_bridge" here).
+    (
+        "emit_checkpoint",
+        EMIT_CHECKPOINT_BRIDGE_RUST,
+        "emit_checkpoint",
+        &[
+            "kind",
+            "project_path",
+            "run_id",
+            "checkpoint_kind",
+            "checkpoint_title",
+            "checkpoint_summary",
+            "checkpoint_brief_path",
+            "checkpoint_manifest_path",
+            "checkpoint_media_artifacts",
+            "checkpoint_mermaid_sources",
+            "checkpoint_decision_relay",
+            "capture_url",
+            "checkpoint_id",
+        ],
+    ),
+    // Decision submission (3 payload fields).
+    (
+        "submit_decision",
+        SUBMIT_DECISION_SWIFT,
+        "submit_decision",
+        &[
+            "kind",
+            "project_path",
+            "run_id",
+            "checkpoint_id",
+            "decision_action",
+            "decision_note",
+        ],
+    ),
+    // Capture completion (3 payload fields incl. the media artifact Vec).
+    (
+        "capture_complete",
+        CAPTURE_COMPLETE_SWIFT,
+        "capture_complete",
+        &[
+            "kind",
+            "project_path",
+            "run_id",
+            "checkpoint_id",
+            "capture_request_id",
+            "completed_media_artifacts",
+        ],
+    ),
+];
+
+/// Collect the top-level object keys of a `serde_json::Value`, panicking if the
+/// value is not a flat JSON object (which also pins "not nested / not tagged").
+fn flat_object_keys(label: &str, value: &serde_json::Value) -> std::collections::BTreeSet<String> {
+    let object = value
+        .as_object()
+        .unwrap_or_else(|| panic!("[{label}] serialized command must be a flat JSON object"));
+    // Every value must be a scalar/array/null — never a nested object, which
+    // would mean the discriminator got tagged or a payload got nested.
+    for (key, child) in object {
+        assert!(
+            !child.is_object(),
+            "[{label}] key `{key}` serialized as a nested object; \
+             the wire must stay flat",
+        );
+    }
+    object.keys().cloned().collect()
+}
+
+#[test]
+fn serialize_emits_flat_object_with_exact_key_set_per_kind() {
+    for (label, source_frame, expected_tag, expected_keys) in SERIALIZE_CASES {
+        let command = decode(source_frame);
+
+        // Serialize via the hand-written impl into a structured Value.
+        let value = serde_json::to_value(&command)
+            .unwrap_or_else(|err| panic!("[{label}] serialize failed: {err}"));
+
+        // (a) Flat object, no nesting/tagging.
+        let actual_keys = flat_object_keys(label, &value);
+
+        // (b) EXACT key set — added or removed field fails.
+        let expected: std::collections::BTreeSet<String> =
+            expected_keys.iter().map(|k| (*k).to_string()).collect();
+        assert_eq!(
+            actual_keys, expected,
+            "[{label}] serialized key set drifted from the pinned wire contract",
+        );
+
+        // (c) The `kind` discriminator is the expected string.
+        assert_eq!(
+            value.get("kind").and_then(serde_json::Value::as_str),
+            Some(*expected_tag),
+            "[{label}] kind discriminator mismatch",
+        );
+        // The framing keys are always present and non-empty.
+        assert!(
+            value
+                .get("project_path")
+                .and_then(serde_json::Value::as_str)
+                .is_some_and(|s| !s.is_empty()),
+            "[{label}] project_path missing from serialized wire",
+        );
+        assert!(
+            value
+                .get("run_id")
+                .and_then(serde_json::Value::as_str)
+                .is_some_and(|s| !s.is_empty()),
+            "[{label}] run_id missing from serialized wire",
+        );
+
+        // (d) Round-trip identity: deserialize(serialize(cmd)) == cmd.
+        let round_tripped: MutateRunCommand = serde_json::from_value(value)
+            .unwrap_or_else(|err| panic!("[{label}] round-trip deserialize failed: {err}"));
+        assert_eq!(
+            round_tripped, command,
+            "[{label}] serialize∘deserialize is not the identity",
+        );
+    }
+}
+
+/// The `emit_checkpoint` relay value must survive serialization verbatim. This
+/// is the single most desync-prone field: only the checkpoint bridge sets it,
+/// and the Swift struct has no key for it. Pin that the serialized wire carries
+/// the relay string (not dropped, not tagged).
+#[test]
+fn serialize_emit_checkpoint_preserves_decision_relay_value() {
+    let command = decode(EMIT_CHECKPOINT_BRIDGE_RUST);
+    let value = serde_json::to_value(&command).expect("serialize emit_checkpoint");
+    assert_eq!(
+        value
+            .get("checkpoint_decision_relay")
+            .and_then(serde_json::Value::as_str),
+        Some("checkpoint_bridge"),
+        "checkpoint_decision_relay must serialize to its bridge value",
+    );
+
+    // And the round-trip preserves the typed relay variant.
+    let round_tripped: MutateRunCommand =
+        serde_json::from_value(value).expect("round-trip emit_checkpoint");
+    let RunMutationKind::EmitCheckpoint {
+        checkpoint_decision_relay,
+        ..
+    } = round_tripped.kind
+    else {
+        panic!("expected emit_checkpoint after round-trip");
+    };
+    assert_eq!(
+        checkpoint_decision_relay,
+        Some(CheckpointDecisionRelay::CheckpointBridge),
+        "relay value must round-trip through serialize∘deserialize",
+    );
+}
