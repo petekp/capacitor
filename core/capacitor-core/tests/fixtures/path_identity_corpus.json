@@ -1,0 +1,141 @@
+{
+  "_schema": {
+    "version": 1,
+    "audit": "C2-Phase1",
+    "purpose": "Shared cross-language fixture pinning path normalization + workspace_id join-key outputs. The Rust core is the source of truth; the Swift conformance stage asserts its own PathNormalizer.normalize / WorkspaceIdentity outputs against the `expected_*` fields for `must_agree` rows.",
+    "platform": "macOS (paths are lowercased; normalize is case-insensitive)",
+    "row_fields": {
+      "id": "stable identifier for the row",
+      "description": "what edge this row exercises",
+      "input": "raw input path string fed to the normalizer / workspace_id",
+      "agreement": "one of: must_agree | documented_divergence",
+      "divergence_reason": "(only when documented_divergence) why Rust and Swift differ. Two distinct kinds exist: (a) INTENTIONAL/by-design divergence (e.g. '.'/'..' replay determinism) and (b) CURRENT cross-language drift that C2-Phase2 must reconcile. Rows of kind (b) carry a `phase2_reconcile` marker.",
+      "phase2_reconcile": "(only on documented_divergence rows of kind (b)) true => this is an UNINTENDED current workspace_id drift between Rust and Swift, rescued today only by runtime path-containment fallbacks, and is a C2-Phase2 reconcile target — NOT an intentional design divergence.",
+      "expected_normalize": "Rust normalize_path_for_matching(input) output (source of truth)",
+      "expected_default_workspace_id": "Rust default_workspace_id(input) = workspace_id(input, input) output (source of truth)",
+      "note": "optional context"
+    },
+    "consumer_notes": {
+      "rust": "domain/identity.rs tests::corpus_pins_normalize_and_workspace_id reads this file relative to CARGO_MANIFEST_DIR and asserts every static row (pins Rust's own outputs for ALL rows regardless of agreement, since Rust is the source of truth).",
+      "swift": "For must_agree rows, assert PathNormalizer.normalize(input) == expected_normalize and WorkspaceIdentity.fromPath(input) == expected_default_workspace_id. For documented_divergence rows, the Swift output is EXPECTED to differ; pin the CURRENT Swift value and assert the divergence still holds (do not assert equality with the Rust expected_*). The static rows use paths that DO NOT exist on disk, so both Rust canonicalize() and Swift resolvingSymlinksInPath() fall through to their lexical/string behavior, keeping the corpus deterministic across machines.",
+      "fs_dependent": "Git-worktree and symlink edges cannot be pinned to literal strings (they depend on a real tmpdir). They are described in `fs_dependent_cases` and exercised by Rust with live tmpdirs: the symlink edge by tests::corpus_fs_dependent_symlink_normalize_keeps_link_workspace_id_resolves and the worktree edge by tests::workspace_id_is_stable_across_worktrees. The Swift stage mirrors the symlink tmpdir construction in PathNormalizerConformanceTests; worktree stability is owned by the Rust test (see the symlinked_dir / git_worktree_stability rows below)."
+    }
+  },
+  "static_rows": [
+    {
+      "id": "plain_abs",
+      "description": "plain absolute path, already lowercase, no trailing slash",
+      "input": "/Users/pete/Code/myrepo",
+      "agreement": "must_agree",
+      "expected_normalize": "/users/pete/code/myrepo",
+      "expected_default_workspace_id": "5d699b305e97dd1568da5aaf1ec9a3ab"
+    },
+    {
+      "id": "trailing_slash",
+      "description": "single trailing slash: normalize agrees, but workspace_id DRIFTS cross-language",
+      "input": "/Users/pete/Code/myrepo/",
+      "agreement": "documented_divergence",
+      "divergence_reason": "normalize AGREES (both languages strip the trailing slash -> /users/pete/code/myrepo), but workspace_id DIVERGES. Rust default_workspace_id(input) = workspace_id(input, input) canonicalize-falls-through to the RAW input and hashes source '/users/pete/code/myrepo/|/users/pete/code/myrepo/' (trailing slash KEPT in BOTH the project_id and the relative half) -> 973dca301891a37acca11bbb72cebfaa. Swift WorkspaceIdentity.fromPath FIRST runs PathNormalizer.normalize (which strips the trailing slash) and hashes source '/users/pete/code/myrepo|/users/pete/code/myrepo' -> 5d699b305e97dd1568da5aaf1ec9a3ab, colliding with plain_abs. Different source string -> different MD5.",
+      "phase2_reconcile": true,
+      "expected_normalize": "/users/pete/code/myrepo",
+      "expected_default_workspace_id": "973dca301891a37acca11bbb72cebfaa",
+      "note": "CURRENT cross-language drift (not an intentional design divergence). Rescued today only by SessionStateManager runtime path-containment fallbacks. C2-Phase2 must reconcile the key derivations (e.g. normalize the input before hashing on the Rust side, or stop stripping on the Swift side) so a trailing slash cannot fork the workspace_id."
+    },
+    {
+      "id": "double_trailing_slash",
+      "description": "double trailing slash: normalize agrees, but workspace_id DRIFTS cross-language (same root cause as trailing_slash)",
+      "input": "/Users/pete/Code/myrepo//",
+      "agreement": "documented_divergence",
+      "divergence_reason": "Same root cause as trailing_slash. normalize AGREES (both collapse to /users/pete/code/myrepo) but workspace_id DIVERGES. Rust hashes the RAW double-slash input source '/users/pete/code/myrepo//|/users/pete/code/myrepo//' -> cf208ebfda766c2ba02fc9787c1b986a. Swift normalizes first (slashes stripped) and hashes '/users/pete/code/myrepo|/users/pete/code/myrepo' -> 5d699b305e97dd1568da5aaf1ec9a3ab. Different source string -> different MD5.",
+      "phase2_reconcile": true,
+      "expected_normalize": "/users/pete/code/myrepo",
+      "expected_default_workspace_id": "cf208ebfda766c2ba02fc9787c1b986a",
+      "note": "CURRENT cross-language drift (not an intentional design divergence). Rescued today only by runtime path-containment fallbacks. Same C2-Phase2 reconcile target as trailing_slash."
+    },
+    {
+      "id": "root",
+      "description": "filesystem root must survive trailing-slash stripping",
+      "input": "/",
+      "agreement": "must_agree",
+      "expected_normalize": "/",
+      "expected_default_workspace_id": "8bbd213bf2908898bd8143a79ce9d01b"
+    },
+    {
+      "id": "mixed_case",
+      "description": "mixed-case path lowercases to match plain_abs",
+      "input": "/Users/Pete/Code/MyRepo",
+      "agreement": "must_agree",
+      "expected_normalize": "/users/pete/code/myrepo",
+      "expected_default_workspace_id": "5d699b305e97dd1568da5aaf1ec9a3ab",
+      "note": "normalize AND default_workspace_id match plain_abs exactly: case-insensitivity is the whole point of the lowercase step."
+    },
+    {
+      "id": "dotdot_segment",
+      "description": "a '..' parent segment is NOT collapsed by Rust normalize_path_for_matching",
+      "input": "/Users/pete/Code/sub/../myrepo",
+      "agreement": "documented_divergence",
+      "divergence_reason": "Rust normalize_path_for_matching is a PURE STRING op (no FS, for replay determinism) and leaves '..' literal. Swift PathNormalizer.normalize runs URL.standardizedFileURL which LEXICALLY collapses '..', yielding /users/pete/code/myrepo. The two outputs differ by construction.",
+      "expected_normalize": "/users/pete/code/sub/../myrepo",
+      "expected_default_workspace_id": "dd29f00281b8bce5dc3e34e3b556b9e9",
+      "note": "Swift expected_normalize would be /users/pete/code/myrepo and Swift expected_default_workspace_id would equal plain_abs's 5d699b305e97dd1568da5aaf1ec9a3ab. The join is rescued at runtime by SessionStateManager path-containment fallbacks."
+    },
+    {
+      "id": "dot_segment",
+      "description": "a '.' current-dir segment is NOT collapsed by Rust normalize_path_for_matching",
+      "input": "/Users/pete/Code/./myrepo",
+      "agreement": "documented_divergence",
+      "divergence_reason": "Same root cause as dotdot_segment: Rust leaves '.' literal (pure string), Swift URL.standardizedFileURL collapses it. Outputs differ by construction.",
+      "expected_normalize": "/users/pete/code/./myrepo",
+      "expected_default_workspace_id": "21d818d20c5b4e6b072b89d116ce3030",
+      "note": "Swift collapses to /users/pete/code/myrepo (matching plain_abs)."
+    },
+    {
+      "id": "git_project_id",
+      "description": "a project_id ending in .git (the git-repo common-dir key) used as a bare input to default_workspace_id; workspace_id DRIFTS cross-language",
+      "input": "/Users/pete/Code/myrepo/.git",
+      "agreement": "documented_divergence",
+      "divergence_reason": "normalize AGREES (both keep the literal /users/pete/code/myrepo/.git), but workspace_id DIVERGES because only Rust is .git-aware. Rust default_workspace_id passes the .git path as BOTH project_id and project_path; repo_root_from_project_id detects the trailing '.git' file_name and returns its PARENT (/users/pete/code/myrepo) as repo_root, then workspace_relative_path strip_prefix(repo_root) leaves the relative segment '.git' (NOT empty). So Rust hashes source '/users/pete/code/myrepo/.git|.git' -> ad22cc6998a67d53eb7896bc41da7925. Swift WorkspaceIdentity.fromPath has NO .git awareness; it hashes source '/users/pete/code/myrepo/.git|/users/pete/code/myrepo/.git' -> f11988aa7d1c2ad9f893c462fef23134. Different source string -> different MD5.",
+      "phase2_reconcile": true,
+      "expected_normalize": "/users/pete/code/myrepo/.git",
+      "expected_default_workspace_id": "ad22cc6998a67d53eb7896bc41da7925",
+      "note": "CURRENT cross-language drift (not an intentional design divergence). The Rust hashed source is '/users/pete/code/myrepo/.git|.git' — the relative half is the '.git' segment that survives strip_prefix(repo_root), NOT empty. (A separate, intentional Rust-internal hazard — default_workspace_id of the repo dir vs git-aware workspace_id of the SAME project — is documented in rust_internal_divergence.) C2-Phase2 must give a git project ONE workspace_id regardless of which entry path / language computes it; rescued today only by runtime path-containment fallbacks."
+    },
+    {
+      "id": "plain_dir",
+      "description": "a plain non-git directory (no .git suffix)",
+      "input": "/Users/pete/Code/plaindir",
+      "agreement": "must_agree",
+      "expected_normalize": "/users/pete/code/plaindir",
+      "expected_default_workspace_id": "0576f21e1e7ea5c20406a023c6fbf311"
+    }
+  ],
+  "rust_internal_divergence": {
+    "id": "default_vs_git_aware_same_project",
+    "description": "THE CORE C2-PHASE2 HAZARD. For the SAME git project, the pinned-project-list key (default_workspace_id of the repo path, no git resolution) does NOT equal the git-aware workspace_id(common_dir, repo_path).",
+    "repo_path": "/Users/pete/Code/myrepo",
+    "git_common_dir": "/Users/pete/Code/myrepo/.git",
+    "default_workspace_id_of_repo_path": "5d699b305e97dd1568da5aaf1ec9a3ab",
+    "git_aware_workspace_id": "cca950078b6f57529eb688528c2a4d7d",
+    "they_match": false,
+    "why": "default_workspace_id hashes source='/users/pete/code/myrepo|/users/pete/code/myrepo' (project_id==project_path, no .git so no relative stripping). git-aware workspace_id hashes source='/users/pete/code/myrepo/.git|' (project_id is the .git common dir, repo_root_from_project_id strips .git making relative empty). Different source string -> different MD5. A project keyed one way will MISS a state keyed the other way unless a fallback rescues it.",
+    "phase2_action": "DEFERRED: C2-Phase2 convergence must reconcile these two key derivations so a git project has ONE workspace_id regardless of entry path."
+  },
+  "fs_dependent_cases": [
+    {
+      "id": "git_worktree_stability",
+      "description": "A linked git worktree (.git is a file with 'gitdir:' + commondir) must resolve to the SAME project_id/project_path as the primary worktree, so workspace_id is stable across worktrees.",
+      "agreement": "must_agree",
+      "construction": "Build a tmpdir repo with .git/ dir + package.json marker, plus a sibling worktree whose .git FILE points at <repo>/.git/worktrees/<name> with a commondir of '../..'. resolve_project_identity on a file in each must yield equal project_id and project_path, and workspace_id over those must be equal.",
+      "expected": "dynamic (tmpdir-relative); assert equality between the two worktrees rather than a literal hash.",
+      "note": "Exercised by Rust tests::workspace_id_is_stable_across_worktrees (it builds the tmpdir repo + linked worktree and asserts equal project_id/project_path/workspace_id). A real git worktree (with a .git FILE + commondir) is impractical to construct deterministically in the Swift unit-test environment, so worktree stability is OWNED by that Rust test; the Swift conformance stage acknowledges the gap with an explained placeholder rather than re-deriving it."
+    },
+    {
+      "id": "symlinked_dir",
+      "description": "A symlinked directory pointing at a real target.",
+      "agreement": "documented_divergence",
+      "divergence_reason": "Rust normalize_path_for_matching does NOT resolve symlinks (pure string). Rust workspace_id calls std::fs::canonicalize which DOES resolve the symlink (FS-touching). Swift PathNormalizer.normalize calls resolvingSymlinksInPath when the file exists (FS+env-dependent). So normalize disagrees (Rust keeps the link path, Swift resolves it) while workspace_id may agree because both resolve the link via the FS. The exact behavior is machine/FS-dependent; this row documents the seam rather than pinning a literal.",
+      "expected": "dynamic (tmpdir-relative); observe behavior, do not assert a literal.",
+      "note": "Exercised by Rust tests::corpus_fs_dependent_symlink_normalize_keeps_link_workspace_id_resolves with a live tmpdir symlink: it pins that Rust normalize KEEPS the symlink path string (link != target) while Rust workspace_id canonicalizes THROUGH it (link == target). Mirrored on the Swift side by PathNormalizerConformanceTests.testSymlinkSeamMirrorsRust, which builds the same tmpdir symlink and pins the CURRENT Swift PathNormalizer.normalize + WorkspaceIdentity.fromPath behavior, cross-referencing the Rust finding to document the Rust-vs-Swift symlink seam."
+    }
+  ]
+}
