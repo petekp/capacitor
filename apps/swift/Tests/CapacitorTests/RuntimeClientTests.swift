@@ -929,31 +929,10 @@ final class RuntimeClientTests: XCTestCase {
     }
 
     func testRuntimeRunMutationRequestEncodesIdeaFieldsUsingSnakeCaseKeys() throws {
-        let request = RuntimeRunMutationRequest(
-            kind: "create",
+        let request = RuntimeRunMutationRequest.create(
             projectPath: "/tmp/core-project",
             runId: "run-idea-encode",
-            checkpointId: nil,
             methodId: "method-001",
-            involvement: nil,
-            checkpointKind: nil,
-            checkpointTitle: nil,
-            checkpointSummary: nil,
-            checkpointBriefPath: nil,
-            checkpointManifestPath: nil,
-            checkpointMediaArtifacts: [],
-            checkpointMermaidSources: [],
-            captureUrl: nil,
-            decisionAction: nil,
-            decisionNote: nil,
-            sessionId: nil,
-            delegationWorkerId: nil,
-            statusMessage: nil,
-            captureRequestId: nil,
-            clientId: nil,
-            observedCaptureUrl: nil,
-            captureFailureReason: nil,
-            completedMediaArtifacts: [],
             ideaId: "test-1",
             ideaTitle: "Fix bug",
             ideaDescription: "Description",

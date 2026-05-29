@@ -477,35 +477,63 @@ actor RunCaptureCoordinator {
         captureFailureReason: String? = nil,
         completedMediaArtifacts: [RuntimeMediaArtifact] = [],
     ) -> RuntimeRunMutationRequest {
-        RuntimeRunMutationRequest(
-            kind: kind,
-            projectPath: run.projectPath,
-            runId: run.id,
-            checkpointId: checkpointID,
-            methodId: nil,
-            involvement: nil,
-            checkpointKind: nil,
-            checkpointTitle: nil,
-            checkpointSummary: nil,
-            checkpointBriefPath: nil,
-            checkpointManifestPath: nil,
-            checkpointMediaArtifacts: [],
-            checkpointMermaidSources: [],
-            captureUrl: nil,
-            decisionAction: nil,
-            decisionNote: nil,
-            sessionId: nil,
-            delegationWorkerId: nil,
-            statusMessage: nil,
-            captureRequestId: captureRequestID,
-            clientId: clientID,
-            observedCaptureUrl: observedCaptureURL,
-            captureFailureReason: captureFailureReason,
-            completedMediaArtifacts: completedMediaArtifacts,
-            ideaId: nil,
-            ideaTitle: nil,
-            ideaDescription: nil,
-        )
+        switch kind {
+        case "capture_claim":
+            .captureClaim(
+                projectPath: run.projectPath,
+                runId: run.id,
+                checkpointId: checkpointID,
+                captureRequestId: captureRequestID,
+                clientId: clientID,
+                observedCaptureUrl: observedCaptureURL,
+            )
+        case "capture_failed":
+            .captureFailed(
+                projectPath: run.projectPath,
+                runId: run.id,
+                checkpointId: checkpointID,
+                captureRequestId: captureRequestID,
+                captureFailureReason: captureFailureReason,
+            )
+        case "capture_complete":
+            .captureComplete(
+                projectPath: run.projectPath,
+                runId: run.id,
+                checkpointId: checkpointID,
+                captureRequestId: captureRequestID,
+                completedMediaArtifacts: completedMediaArtifacts,
+            )
+        default:
+            RuntimeRunMutationRequest(
+                kind: kind,
+                projectPath: run.projectPath,
+                runId: run.id,
+                checkpointId: checkpointID,
+                methodId: nil,
+                involvement: nil,
+                checkpointKind: nil,
+                checkpointTitle: nil,
+                checkpointSummary: nil,
+                checkpointBriefPath: nil,
+                checkpointManifestPath: nil,
+                checkpointMediaArtifacts: [],
+                checkpointMermaidSources: [],
+                captureUrl: nil,
+                decisionAction: nil,
+                decisionNote: nil,
+                sessionId: nil,
+                delegationWorkerId: nil,
+                statusMessage: nil,
+                captureRequestId: captureRequestID,
+                clientId: clientID,
+                observedCaptureUrl: observedCaptureURL,
+                captureFailureReason: captureFailureReason,
+                completedMediaArtifacts: completedMediaArtifacts,
+                ideaId: nil,
+                ideaTitle: nil,
+                ideaDescription: nil,
+            )
+        }
     }
 
     private func normalizedCaptureURL(_ captureURL: String?) -> String? {

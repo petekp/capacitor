@@ -431,34 +431,12 @@ extension AppState {
         action: String,
         note: String?,
     ) async throws {
-        try await runtimeClient.mutateRun(RuntimeRunMutationRequest(
-            kind: "submit_decision",
+        try await runtimeClient.mutateRun(.submitDecision(
             projectPath: projectPath,
             runId: runID,
             checkpointId: checkpointID,
-            methodId: nil,
-            involvement: nil,
-            checkpointKind: nil,
-            checkpointTitle: nil,
-            checkpointSummary: nil,
-            checkpointBriefPath: nil,
-            checkpointManifestPath: nil,
-            checkpointMediaArtifacts: [],
-            checkpointMermaidSources: [],
-            captureUrl: nil,
             decisionAction: action,
             decisionNote: note?.isEmpty == true ? nil : note,
-            sessionId: nil,
-            delegationWorkerId: nil,
-            statusMessage: nil,
-            captureRequestId: nil,
-            clientId: nil,
-            observedCaptureUrl: nil,
-            captureFailureReason: nil,
-            completedMediaArtifacts: [],
-            ideaId: nil,
-            ideaTitle: nil,
-            ideaDescription: nil,
         ))
     }
 
