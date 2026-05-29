@@ -173,42 +173,70 @@ struct CaptureURLBridgeTests {
     @Test
     func `MutateRunCommand carries capture_url`() {
         let cmd = MutateRunCommand(
-            kind: .emitCheckpoint,
             projectPath: "/test",
             runId: "run-001",
-            methodId: nil,
-            involvement: nil,
-            checkpointKind: .implementationMilestone,
-            checkpointTitle: "Test",
-            checkpointSummary: nil,
-            checkpointBriefPath: nil,
-            checkpointManifestPath: nil,
-            checkpointMediaArtifacts: [],
-            checkpointMermaidSources: [],
-            checkpointDecisionRelay: nil,
-            captureUrl: "http://localhost:3000",
-            checkpointId: "checkpoint-001",
-            captureRequestId: "capture-001",
-            clientId: "capacitor-mac-1234",
-            observedCaptureUrl: "http://localhost:3000",
-            captureFailureReason: nil,
-            decisionAction: nil,
-            decisionNote: nil,
-            sessionId: nil,
-            delegationWorkerId: nil,
-            statusMessage: nil,
-            ideaId: nil,
-            ideaTitle: nil,
-            ideaDescription: nil,
-            completedMediaArtifacts: [],
+            kind: .emitCheckpoint(
+                checkpointKind: .implementationMilestone,
+                checkpointTitle: "Test",
+                checkpointSummary: nil,
+                checkpointBriefPath: nil,
+                checkpointManifestPath: nil,
+                checkpointMediaArtifacts: [],
+                checkpointMermaidSources: [],
+                checkpointDecisionRelay: nil,
+                captureUrl: "http://localhost:3000",
+                checkpointId: "checkpoint-001",
+            ),
         )
 
-        #expect(cmd.captureUrl == "http://localhost:3000")
-        #expect(cmd.checkpointId == "checkpoint-001")
-        #expect(cmd.checkpointDecisionRelay == nil)
-        #expect(cmd.captureRequestId == "capture-001")
-        #expect(cmd.clientId == "capacitor-mac-1234")
-        #expect(cmd.observedCaptureUrl == "http://localhost:3000")
+        #expect(cmd.projectPath == "/test")
+        #expect(cmd.runId == "run-001")
+        guard case let .emitCheckpoint(
+            _,
+            _,
+            _,
+            _,
+            _,
+            _,
+            _,
+            checkpointDecisionRelay,
+            captureUrl,
+            checkpointId,
+        ) = cmd.kind else {
+            Issue.record("expected emitCheckpoint kind")
+            return
+        }
+        #expect(captureUrl == "http://localhost:3000")
+        #expect(checkpointId == "checkpoint-001")
+        #expect(checkpointDecisionRelay == nil)
+    }
+
+    @Test
+    func `MutateRunCommand captureClaim carries claim metadata`() {
+        let cmd = MutateRunCommand(
+            projectPath: "/test",
+            runId: "run-001",
+            kind: .captureClaim(
+                checkpointId: "checkpoint-001",
+                captureRequestId: "capture-001",
+                clientId: "capacitor-mac-1234",
+                observedCaptureUrl: "http://localhost:3000",
+            ),
+        )
+
+        guard case let .captureClaim(
+            checkpointId,
+            captureRequestId,
+            clientId,
+            observedCaptureUrl,
+        ) = cmd.kind else {
+            Issue.record("expected captureClaim kind")
+            return
+        }
+        #expect(checkpointId == "checkpoint-001")
+        #expect(captureRequestId == "capture-001")
+        #expect(clientId == "capacitor-mac-1234")
+        #expect(observedCaptureUrl == "http://localhost:3000")
     }
 
     @Test
