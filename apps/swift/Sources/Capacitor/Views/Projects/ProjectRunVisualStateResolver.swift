@@ -80,61 +80,81 @@ enum ProjectRunVisualStateResolver {
             runStatus: run.status,
             statusMessage: cleanedStatusMessage(run.statusMessage),
         )
-        if run.status == "paused",
-           !SessionStaleness.isPausedCheckpointStale(
-               updatedAt: run.updatedAt,
-               now: now,
-           )
-        {
-            return .waiting(statusMessage: statusMessage)
-        }
-        if run.status == "active",
-           !SessionStaleness.isRunFreshnessExpired(
-               updatedAt: run.updatedAt,
-               now: now,
-           )
-        {
-            return .working(statusMessage: statusMessage)
-        }
-        if run.status == "completed",
-           !isTerminalStale(updatedAt: run.updatedAt, now: now)
-        {
-            return .completed(statusMessage: statusMessage)
-        }
-        if run.status == "failed" || run.status == "cancelled",
-           !isTerminalStale(updatedAt: run.updatedAt, now: now)
-        {
-            return .failed(statusMessage: statusMessage)
-        }
-        return .none
+        return classify(run, now: now).visualState(statusMessage: statusMessage)
     }
 
     private static func priority(for run: RuntimeRunState, now: Date) -> Int? {
-        if run.status == "paused",
-           !SessionStaleness.isPausedCheckpointStale(
-               updatedAt: run.updatedAt,
-               now: now,
-           )
-        {
-            return 3
+        classify(run, now: now).priority
+    }
+
+    /// Single exhaustive classification of a run's status, computed once and
+    /// consumed by both `visualState(for:)` and `priority(for:)`.
+    ///
+    /// This merges the two previously-separate `RunStatus` ladders so a given
+    /// status has exactly one meaning across selection and rendering, fixing the
+    /// confirmed drift where `priority` treated `.created` as a selectable
+    /// candidate (priority 0) while `visualState` silently fell through to
+    /// `.none`.
+    ///
+    /// Canonical meaning of `.created`: the run exists but has not started any
+    /// visible work. It remains selectable at the lowest priority (0) — so a
+    /// freshly created run can win selection when nothing else qualifies — but
+    /// renders no visual band of its own. This preserves both prior behaviors
+    /// (`priority` == 0 and `visualState` == `.none`) and gives `.created` one
+    /// consistent definition.
+    ///
+    /// `.active` is preserved exactly: it is always a selection candidate at
+    /// priority 2, but only renders the `.working` band when the run is fresh.
+    /// A stale-active run stays selected yet renders `.none`, matching the
+    /// pre-decomplect behavior.
+    private struct RunClassification {
+        let priority: Int?
+        private let band: RunVisualState
+
+        func visualState(statusMessage: String?) -> RunVisualState {
+            switch band {
+            case .waiting: .waiting(statusMessage: statusMessage)
+            case .working: .working(statusMessage: statusMessage)
+            case .completed: .completed(statusMessage: statusMessage)
+            case .failed: .failed(statusMessage: statusMessage)
+            case .none: .none
+            }
         }
-        if run.status == "active" {
-            return 2
+
+        init(priority: Int?, band: RunVisualState) {
+            self.priority = priority
+            self.band = band
         }
-        if run.status == "completed",
-           !isTerminalStale(updatedAt: run.updatedAt, now: now)
-        {
-            return 1
+    }
+
+    private static func classify(_ run: RuntimeRunState, now: Date) -> RunClassification {
+        switch run.status {
+        case .paused:
+            if SessionStaleness.isPausedCheckpointStale(updatedAt: run.updatedAt, now: now) {
+                return RunClassification(priority: nil, band: .none)
+            }
+            return RunClassification(priority: 3, band: .waiting(statusMessage: nil))
+        case .active:
+            // Always a selection candidate (priority 2); only renders `.working`
+            // while fresh, otherwise selected-but-no-visual.
+            let band: RunVisualState = SessionStaleness.isRunFreshnessExpired(updatedAt: run.updatedAt, now: now)
+                ? .none
+                : .working(statusMessage: nil)
+            return RunClassification(priority: 2, band: band)
+        case .completed:
+            if isTerminalStale(updatedAt: run.updatedAt, now: now) {
+                return RunClassification(priority: nil, band: .none)
+            }
+            return RunClassification(priority: 1, band: .completed(statusMessage: nil))
+        case .failed, .cancelled:
+            if isTerminalStale(updatedAt: run.updatedAt, now: now) {
+                return RunClassification(priority: nil, band: .none)
+            }
+            return RunClassification(priority: 1, band: .failed(statusMessage: nil))
+        case .created:
+            // Selectable at lowest priority, no visual band.
+            return RunClassification(priority: 0, band: .none)
         }
-        if run.status == "failed" || run.status == "cancelled",
-           !isTerminalStale(updatedAt: run.updatedAt, now: now)
-        {
-            return 1
-        }
-        if run.status == "created" {
-            return 0
-        }
-        return nil
     }
 
     private static func isTerminalStale(updatedAt: String, now: Date) -> Bool {

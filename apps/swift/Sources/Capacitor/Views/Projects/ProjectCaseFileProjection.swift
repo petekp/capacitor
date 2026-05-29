@@ -68,7 +68,7 @@ struct ProjectCaseFileProjection: Equatable {
                 statusMessage: nil,
             )
 
-        if run.status == "paused",
+        if run.status == .paused,
            let checkpoint = run.activeCheckpoint
         {
             return CurrentState(
@@ -78,35 +78,34 @@ struct ProjectCaseFileProjection: Equatable {
             )
         }
 
-        if run.status == "active" {
+        switch run.status {
+        case .active:
             return CurrentState(
                 kind: .running,
                 title: "Running",
                 detail: statusDetail ?? "Worker is active.",
             )
-        }
-
-        if run.status == "completed" {
+        case .completed:
             return CurrentState(
                 kind: .completed,
                 title: "Completed",
                 detail: statusDetail ?? "Run completed with checkpoint history.",
             )
-        }
-
-        if run.status == "failed" || run.status == "cancelled" {
+        case .failed, .cancelled:
             return CurrentState(
                 kind: .failed,
-                title: run.status == "cancelled" ? "Cancelled" : "Failed",
+                title: run.status == .cancelled ? "Cancelled" : "Failed",
                 detail: statusDetail ?? "Run ended before completion.",
             )
+        // `.paused` without an active checkpoint, and `.created`, fall through to
+        // the "Recorded" baseline below — matching the prior if-ladder default.
+        case .paused, .created:
+            return CurrentState(
+                kind: .recorded,
+                title: "Recorded",
+                detail: statusDetail ?? "Latest checkpoint history is available.",
+            )
         }
-
-        return CurrentState(
-            kind: .recorded,
-            title: "Recorded",
-            detail: statusDetail ?? "Latest checkpoint history is available.",
-        )
     }
 
     private static func sinceLastLooked(
@@ -174,12 +173,12 @@ struct ProjectCaseFileProjection: Equatable {
     ) -> [String] {
         var risks = [String]()
 
-        if run.status == "failed" || run.status == "cancelled" {
-            let detail = cleaned(run.statusMessage) ?? "Run ended with status \(run.status)."
+        if run.status == .failed || run.status == .cancelled {
+            let detail = cleaned(run.statusMessage) ?? "Run ended with status \(run.status.wireValue)."
             risks.append(detail)
         }
 
-        if run.status == "paused",
+        if run.status == .paused,
            let checkpoint = run.activeCheckpoint
         {
             risks.append("Decision needed before work can continue: \(checkpoint.title)")

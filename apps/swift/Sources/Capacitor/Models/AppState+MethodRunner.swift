@@ -30,31 +30,10 @@ extension AppState {
         _Concurrency.Task { [weak self] in
             guard let self else { return }
             do {
-                try await methodRunnerRuntimeClient.mutateRun(RuntimeRunMutationRequest(
-                    kind: "create",
+                try await methodRunnerRuntimeClient.mutateRun(.create(
                     projectPath: project.path,
                     runId: runID,
-                    checkpointId: nil,
                     methodId: method.id,
-                    involvement: nil,
-                    checkpointKind: nil,
-                    checkpointTitle: nil,
-                    checkpointSummary: nil,
-                    checkpointBriefPath: nil,
-                    checkpointManifestPath: nil,
-                    checkpointMediaArtifacts: [],
-                    checkpointMermaidSources: [],
-                    captureUrl: nil,
-                    decisionAction: nil,
-                    decisionNote: nil,
-                    sessionId: nil,
-                    delegationWorkerId: nil,
-                    statusMessage: nil,
-                    captureRequestId: nil,
-                    clientId: nil,
-                    observedCaptureUrl: nil,
-                    captureFailureReason: nil,
-                    completedMediaArtifacts: [],
                     ideaId: idea.id,
                     ideaTitle: idea.title,
                     ideaDescription: compactRunIdeaDescription(idea.description),

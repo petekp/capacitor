@@ -49,7 +49,7 @@ struct RunCheckpointFollowThroughProjection: Equatable {
             )
         }
 
-        if run.status == "failed" || run.status == "cancelled" {
+        if run.status == .failed || run.status == .cancelled {
             return failed(run: run)
         }
 
@@ -65,7 +65,7 @@ struct RunCheckpointFollowThroughProjection: Equatable {
 
         switch submission.decision {
         case .approve:
-            if run.status == "active" || run.status == "completed" {
+            if run.status == .active || run.status == .completed {
                 return resumed(run: run)
             }
             if elapsed >= suspiciousDelay {
@@ -100,8 +100,8 @@ struct RunCheckpointFollowThroughProjection: Equatable {
     private static func resumed(run: RuntimeRunState) -> RunCheckpointFollowThroughProjection {
         RunCheckpointFollowThroughProjection(
             state: .runResumed,
-            title: run.status == "completed" ? "Decision accepted. Run completed." : "Decision accepted. Run resumed.",
-            message: run.status == "completed"
+            title: run.status == .completed ? "Decision accepted. Run completed." : "Decision accepted. Run resumed.",
+            message: run.status == .completed
                 ? "The run finished after your approval."
                 : "Next expected signal: next checkpoint or completion.",
             detail: cleaned(run.statusMessage) ?? "The checkpoint cleared from the active run snapshot.",

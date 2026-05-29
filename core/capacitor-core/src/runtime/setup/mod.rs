@@ -34,7 +34,7 @@ pub struct DependencyStatus {
     pub install_hint: Option<String>,
 }
 
-#[derive(Debug, Clone, uniffi::Enum)]
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Enum)]
 pub enum HookStatus {
     NotInstalled,
     PartiallyConfigured {
@@ -44,9 +44,7 @@ pub enum HookStatus {
     SettingsUnreadable {
         reason: String,
     },
-    Installed {
-        version: String,
-    },
+    Installed,
     PolicyBlocked {
         reason: String,
     },
@@ -60,13 +58,81 @@ pub enum HookStatus {
     },
 }
 
+/// Why the runtime is holding setup open and requires explicit user action
+/// (as opposed to a state the app can silently auto-repair). The payload
+/// preserves enough for Swift `DebugLog` to distinguish the two welcome cases:
+/// `ClaudeMissing` -> `.claudeMissing`, `PolicyBlocked { reason }` ->
+/// `.hooksBlockedByPolicy(reason:)`.
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Enum)]
+pub enum SetupBlockReason {
+    /// The required `claude` dependency is not installed.
+    ClaudeMissing,
+    /// Hooks are explicitly blocked by a Claude settings policy flag.
+    PolicyBlocked { reason: String },
+}
+
+/// The single, Rust-owned setup-readiness decision. Swift switches on this and
+/// owns *which* side-effect to run; it no longer re-derives the gate.
+///
+/// - `Ready`: every requirement is satisfied.
+/// - `NeedsUserAction { reason }`: setup is held open pending the user
+///   (`ClaudeMissing` or `PolicyBlocked`); maps to the Swift welcome flow.
+/// - `AutoRepairable { status }`: a non-blocking hook state the app can repair
+///   on its own; carries the originating `HookStatus` so Swift can log it.
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Enum)]
+pub enum SetupReadiness {
+    Ready,
+    NeedsUserAction { reason: SetupBlockReason },
+    AutoRepairable { status: HookStatus },
+}
+
 #[derive(Debug, Clone, uniffi::Record)]
 pub struct SetupStatus {
     pub dependencies: Vec<DependencyStatus>,
     pub hooks: HookStatus,
     pub storage_ready: bool,
-    pub all_ready: bool,
-    pub blocking_reason: Option<String>,
+    /// Rust-owned readiness decision. Single source of truth for the startup
+    /// gate; Swift consumes this instead of re-deriving it.
+    pub readiness: SetupReadiness,
+}
+
+impl SetupStatus {
+    /// Pure classifier porting the exact 3-way startup gate that used to live
+    /// in Swift `SetupReadinessCoordinator.startupDecision`.
+    ///
+    /// Load-bearing rule: ONLY a missing required `claude` dependency and an
+    /// explicitly `PolicyBlocked` hook state hold setup open. Every other hook
+    /// state (`NotInstalled`, `PartiallyConfigured`, `SettingsUnreadable`,
+    /// `BinaryBroken`, `SymlinkBroken`) is auto-repairable; `Installed` is ready.
+    pub(crate) fn classify_readiness(
+        dependencies: &[DependencyStatus],
+        hooks: &HookStatus,
+    ) -> SetupReadiness {
+        let claude_missing = dependencies
+            .iter()
+            .any(|dep| dep.name == "claude" && dep.required && !dep.found);
+        if claude_missing {
+            return SetupReadiness::NeedsUserAction {
+                reason: SetupBlockReason::ClaudeMissing,
+            };
+        }
+
+        match hooks {
+            HookStatus::Installed => SetupReadiness::Ready,
+            HookStatus::PolicyBlocked { reason } => SetupReadiness::NeedsUserAction {
+                reason: SetupBlockReason::PolicyBlocked {
+                    reason: reason.clone(),
+                },
+            },
+            HookStatus::NotInstalled
+            | HookStatus::PartiallyConfigured { .. }
+            | HookStatus::SettingsUnreadable { .. }
+            | HookStatus::BinaryBroken { .. }
+            | HookStatus::SymlinkBroken { .. } => SetupReadiness::AutoRepairable {
+                status: hooks.clone(),
+            },
+        }
+    }
 }
 
 #[derive(Debug, Clone, uniffi::Record)]
@@ -80,19 +146,6 @@ pub(crate) struct SetupChecker {
     storage: StorageConfig,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-enum HookSettingsStatus {
-    NotInstalled,
-    PartiallyConfigured {
-        missing_events: Vec<String>,
-        reason: String,
-    },
-    SettingsUnreadable {
-        reason: String,
-    },
-    Installed,
-}
-
 impl SetupChecker {
     pub(crate) fn new(storage: StorageConfig) -> Self {
         Self { storage }
@@ -103,45 +156,13 @@ impl SetupChecker {
         let hooks = self.check_hooks_status();
         let storage_ready = self.check_storage();
 
-        let all_required_deps_found = dependencies.iter().filter(|d| d.required).all(|d| d.found);
-        let missing_required_dep = dependencies.iter().find(|d| d.required && !d.found);
-        let hooks_ok = matches!(hooks, HookStatus::Installed { .. });
-
-        let all_ready = all_required_deps_found && hooks_ok && storage_ready;
-
-        let blocking_reason = if let Some(dep) = missing_required_dep {
-            Some(format!("{} is required but not installed", dep.name))
-        } else if let HookStatus::PolicyBlocked { ref reason } = hooks {
-            Some(reason.clone())
-        } else if let HookStatus::SymlinkBroken {
-            ref target,
-            ref reason,
-        } = hooks
-        {
-            Some(format!(
-                "Hook symlink broken (target: {}): {}",
-                target, reason
-            ))
-        } else if let HookStatus::BinaryBroken { ref reason } = hooks {
-            Some(format!("Hook binary broken: {}", reason))
-        } else if let HookStatus::SettingsUnreadable { ref reason } = hooks {
-            Some(format!("Claude settings unreadable: {}", reason))
-        } else if let HookStatus::PartiallyConfigured { ref reason, .. } = hooks {
-            Some(format!("Hooks partially configured: {}", reason))
-        } else if !hooks_ok {
-            Some("Hooks not installed".to_string())
-        } else if !storage_ready {
-            Some("Storage directory not accessible".to_string())
-        } else {
-            None
-        };
+        let readiness = SetupStatus::classify_readiness(&dependencies, &hooks);
 
         SetupStatus {
             dependencies,
             hooks,
             storage_ready,
-            all_ready,
-            blocking_reason,
+            readiness,
         }
     }
 
@@ -156,6 +177,93 @@ impl SetupChecker {
                 path: None,
                 install_hint: Some("Unknown dependency".to_string()),
             },
+        }
+    }
+}
+
+#[cfg(test)]
+mod readiness_tests {
+    use super::*;
+
+    fn claude_dependency(found: bool) -> DependencyStatus {
+        DependencyStatus {
+            name: "claude".to_string(),
+            required: true,
+            found,
+            path: if found {
+                Some("/opt/homebrew/bin/claude".to_string())
+            } else {
+                None
+            },
+            install_hint: None,
+        }
+    }
+
+    /// Characterization test mirroring the Swift
+    /// `SetupReadinessCoordinatorTests` canonical contract. Crosses every
+    /// `HookStatus` variant with claude-present/absent so the ported 3-way gate
+    /// is provably the same decision the Swift `startupDecision` used to make.
+    #[test]
+    fn classify_readiness_matches_canonical_startup_contract() {
+        // 1. claude missing -> NeedsUserAction(ClaudeMissing), regardless of hooks.
+        assert_eq!(
+            SetupStatus::classify_readiness(&[claude_dependency(false)], &HookStatus::Installed,),
+            SetupReadiness::NeedsUserAction {
+                reason: SetupBlockReason::ClaudeMissing
+            },
+            "missing required claude must hold setup even when hooks are installed"
+        );
+
+        // 2. claude present + hooks policy-blocked -> NeedsUserAction(PolicyBlocked).
+        assert_eq!(
+            SetupStatus::classify_readiness(
+                &[claude_dependency(true)],
+                &HookStatus::PolicyBlocked {
+                    reason: "disableAllHooks is enabled.".to_string(),
+                },
+            ),
+            SetupReadiness::NeedsUserAction {
+                reason: SetupBlockReason::PolicyBlocked {
+                    reason: "disableAllHooks is enabled.".to_string(),
+                }
+            },
+            "policy-blocked hooks must hold setup with the reason preserved"
+        );
+
+        // 3. claude present + hooks installed -> Ready.
+        assert_eq!(
+            SetupStatus::classify_readiness(&[claude_dependency(true)], &HookStatus::Installed,),
+            SetupReadiness::Ready,
+            "installed hooks with claude present is ready"
+        );
+
+        // 4-8. claude present + every other hook state -> AutoRepairable(status).
+        let auto_repairable_states = [
+            HookStatus::NotInstalled,
+            HookStatus::PartiallyConfigured {
+                missing_events: vec!["TaskCompleted".to_string(), "SessionEnd".to_string()],
+                reason: "Missing or invalid managed hook configuration for 2 event(s)".to_string(),
+            },
+            HookStatus::SettingsUnreadable {
+                reason: "Failed to parse settings.json".to_string(),
+            },
+            HookStatus::BinaryBroken {
+                reason: "codesign error".to_string(),
+            },
+            HookStatus::SymlinkBroken {
+                target: "/old/path/hud-hook".to_string(),
+                reason: "Symlink target no longer exists.".to_string(),
+            },
+        ];
+
+        for status in auto_repairable_states {
+            assert_eq!(
+                SetupStatus::classify_readiness(&[claude_dependency(true)], &status),
+                SetupReadiness::AutoRepairable {
+                    status: status.clone()
+                },
+                "{status:?} must be auto-repairable, not hold setup"
+            );
         }
     }
 }

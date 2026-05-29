@@ -340,6 +340,37 @@ fn path_to_string(path: &Path) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serde::Deserialize;
+
+    /// One static (non-FS) row of the shared cross-language path-identity corpus.
+    ///
+    /// See `core/capacitor-core/tests/fixtures/path_identity_corpus.json`. These
+    /// rows use paths that do NOT exist on disk so `std::fs::canonicalize` (Rust)
+    /// and `resolvingSymlinksInPath` (Swift) both fall through to their
+    /// lexical/string behavior, keeping the corpus deterministic across machines.
+    #[derive(Debug, Deserialize)]
+    struct CorpusRow {
+        id: String,
+        input: String,
+        agreement: String,
+        expected_normalize: String,
+        expected_default_workspace_id: String,
+    }
+
+    #[derive(Debug, Deserialize)]
+    struct Corpus {
+        static_rows: Vec<CorpusRow>,
+    }
+
+    fn load_corpus() -> Corpus {
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("tests")
+            .join("fixtures")
+            .join("path_identity_corpus.json");
+        let raw = std::fs::read_to_string(&path)
+            .unwrap_or_else(|err| panic!("read corpus {}: {err}", path.display()));
+        serde_json::from_str(&raw).expect("parse path_identity_corpus.json")
+    }
 
     #[test]
     fn normalize_path_trims_trailing_slashes() {
@@ -348,11 +379,139 @@ mod tests {
         assert_eq!(normalize_path_for_matching("/"), "/");
     }
 
+    /// Pins the CURRENT Rust outputs for every static corpus row so future drift in
+    /// `normalize_path_for_matching` / `default_workspace_id` is LOUD (the JSON is the
+    /// shared source of truth the Swift conformance stage asserts against).
+    ///
+    /// `agreement` is recorded for cross-language consumers; Rust is the source of
+    /// truth either way, so this test pins Rust outputs for ALL rows regardless of
+    /// whether Swift is expected to match (`must_agree`) or differ
+    /// (`documented_divergence`). Note that `documented_divergence` covers two kinds:
+    /// intentional/by-design divergence (e.g. the `.`/`..` replay-determinism rows)
+    /// and CURRENT cross-language workspace_id drift flagged `phase2_reconcile: true`
+    /// in the corpus (the trailing_slash / double_trailing_slash / git_project_id
+    /// rows that C2-Phase2 must reconcile). Rust pins its own value for both kinds.
+    #[test]
+    fn corpus_pins_normalize_and_workspace_id() {
+        let corpus = load_corpus();
+        assert!(
+            !corpus.static_rows.is_empty(),
+            "corpus must contain static rows"
+        );
+
+        for row in &corpus.static_rows {
+            assert_eq!(
+                normalize_path_for_matching(&row.input),
+                row.expected_normalize,
+                "normalize drift for corpus row {:?} (input {:?})",
+                row.id,
+                row.input
+            );
+            assert_eq!(
+                default_workspace_id(&row.input),
+                row.expected_default_workspace_id,
+                "default_workspace_id drift for corpus row {:?} (input {:?})",
+                row.id,
+                row.input
+            );
+            assert!(
+                row.agreement == "must_agree" || row.agreement == "documented_divergence",
+                "corpus row {:?} has unknown agreement {:?}",
+                row.id,
+                row.agreement
+            );
+        }
+    }
+
     #[test]
     fn workspace_id_is_stable_for_case_changes() {
         let first = workspace_id("/Users/Pete/Code/Repo/.git", "/Users/Pete/Code/Repo");
         let second = workspace_id("/users/pete/code/repo/.git", "/users/pete/code/repo");
         assert_eq!(first, second);
+    }
+
+    /// HAZARD PIN (C2-Phase2, DEFERRED). For the SAME git project, the pinned-project-list
+    /// key derived via `default_workspace_id(repo_path)` (NO git resolution) does NOT equal
+    /// the git-aware `workspace_id(common_dir, repo_path)`.
+    ///
+    /// - `default_workspace_id("/Users/pete/Code/myrepo")` hashes
+    ///   source `"/users/pete/code/myrepo|/users/pete/code/myrepo"`.
+    /// - git-aware `workspace_id("/Users/pete/Code/myrepo/.git", "/Users/pete/Code/myrepo")`
+    ///   hashes source `"/users/pete/code/myrepo/.git|"` (repo_root_from_project_id strips the
+    ///   `.git`, making the relative path empty).
+    ///
+    /// Different source strings -> different MD5 -> a project keyed one way MISSES state keyed
+    /// the other way unless a runtime path-containment fallback rescues it. This test PINS the
+    /// current (divergent) behavior so C2-Phase2 convergence has a guardrail; when Phase2
+    /// reconciles the two derivations, this assertion is the one that must be updated.
+    #[test]
+    fn default_workspace_id_differs_from_git_aware_for_same_project_c2_phase2_hazard() {
+        let repo_path = "/Users/pete/Code/myrepo";
+        let git_common_dir = "/Users/pete/Code/myrepo/.git";
+
+        let default_key = default_workspace_id(repo_path);
+        let git_aware_key = workspace_id(git_common_dir, repo_path);
+
+        // Current (pinned) behavior: the two keys for the SAME project DIVERGE.
+        assert_ne!(
+            default_key, git_aware_key,
+            "C2-Phase2 hazard resolved? default_workspace_id and git-aware workspace_id now \
+             AGREE for the same project. Update this test and the corpus \
+             rust_internal_divergence block to reflect the converged behavior."
+        );
+
+        // Pin the exact current values so any silent change in either derivation is loud.
+        assert_eq!(
+            default_key, "5d699b305e97dd1568da5aaf1ec9a3ab",
+            "default_workspace_id(repo_path) drifted"
+        );
+        assert_eq!(
+            git_aware_key, "cca950078b6f57529eb688528c2a4d7d",
+            "git-aware workspace_id(common_dir, repo_path) drifted"
+        );
+    }
+
+    /// Pins the symlink seam (`fs_dependent_cases.symlinked_dir`, documented_divergence).
+    ///
+    /// Within Rust itself, `normalize_path_for_matching` and `workspace_id` treat a symlink
+    /// DIFFERENTLY:
+    /// - `normalize_path_for_matching` is a pure string op and KEEPS the link path (it does
+    ///   NOT resolve the symlink).
+    /// - `workspace_id` calls `std::fs::canonicalize`, which RESOLVES the symlink, so the link
+    ///   and its target produce the SAME workspace_id.
+    ///
+    /// Swift's `PathNormalizer.normalize` additionally calls `resolvingSymlinksInPath` when the
+    /// file exists, so Swift's normalize will resolve the link where Rust's does not — hence
+    /// `documented_divergence` for normalize on this row.
+    #[test]
+    fn corpus_fs_dependent_symlink_normalize_keeps_link_workspace_id_resolves() {
+        let temp = tempfile::tempdir().expect("temp dir");
+        let target = temp.path().join("realdir");
+        std::fs::create_dir_all(&target).expect("create target dir");
+        let link = temp.path().join("linkdir");
+        std::os::unix::fs::symlink(&target, &link).expect("create symlink");
+
+        let link_str = link.to_string_lossy().to_string();
+        let target_str = target.to_string_lossy().to_string();
+
+        // normalize KEEPS the link path (only trims/lowercases); it does NOT resolve to target.
+        let normalized = normalize_path_for_matching(&link_str);
+        assert!(
+            normalized.ends_with("/linkdir"),
+            "normalize unexpectedly resolved the symlink: {normalized:?}"
+        );
+        assert_ne!(
+            normalize_path_for_matching(&link_str),
+            normalize_path_for_matching(&target_str),
+            "normalize should treat link and target as DISTINCT strings"
+        );
+
+        // workspace_id RESOLVES the symlink via canonicalize, so link == target.
+        assert_eq!(
+            workspace_id(&link_str, &link_str),
+            workspace_id(&target_str, &target_str),
+            "workspace_id should canonicalize the symlink so link and target collide"
+        );
     }
 
     #[test]

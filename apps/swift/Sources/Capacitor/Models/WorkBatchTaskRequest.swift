@@ -40,64 +40,37 @@ struct WorkBatchLoadedTaskRequest: Equatable {
     }
 }
 
+/// Thin wrapper over `JSONDirectoryStore`. Requests are the ONLY store that caps the
+/// sanitized basename at 80 characters (`maxLength: 80`, fallback "task").
 struct WorkBatchTaskRequestStore {
     static let relativeDirectory = ".capacitor/work-batch-task-requests"
 
-    private let worktreeURL: URL
-    private let fileManager: FileManager
+    private let store: JSONDirectoryStore<WorkBatchTaskRequest>
 
     init(
         worktreePath: String,
         fileManager: FileManager = .default,
     ) {
-        worktreeURL = URL(fileURLWithPath: worktreePath, isDirectory: true)
-        self.fileManager = fileManager
+        store = JSONDirectoryStore(
+            worktreePath: worktreePath,
+            fileManager: fileManager,
+            relativeDirectory: Self.relativeDirectory,
+            fileName: Self.fileName(id:),
+            loadPredicate: { $0.hasUsableContent },
+        )
     }
 
     func requestURL(taskID: String) -> URL {
-        directoryURL.appendingPathComponent(Self.fileName(id: taskID))
+        store.url(forID: taskID)
     }
 
     func loadRequests() throws -> [WorkBatchLoadedTaskRequest] {
-        guard fileManager.fileExists(atPath: directoryURL.path) else { return [] }
-
-        let urls = try fileManager.contentsOfDirectory(
-            at: directoryURL,
-            includingPropertiesForKeys: nil,
-        )
-        let decoder = JSONDecoder()
-        decoder.dateDecodingStrategy = .capacitorISO8601
-
-        return urls
-            .filter { $0.pathExtension == "json" }
-            .compactMap { url in
-                guard let data = try? Data(contentsOf: url),
-                      let request = try? decoder.decode(WorkBatchTaskRequest.self, from: data),
-                      request.hasUsableContent
-                else {
-                    return nil
-                }
-                return WorkBatchLoadedTaskRequest(request: request, url: url)
-            }
+        try store.load().map { WorkBatchLoadedTaskRequest(request: $0.record, url: $0.url) }
     }
 
     func write(_ request: WorkBatchTaskRequest, taskID: String? = nil) throws -> URL {
-        try? WorkBatchMetadataIgnoreInstaller.install(
-            in: worktreeURL.path,
-            fileManager: fileManager,
-        )
-        try fileManager.createDirectory(
-            at: directoryURL,
-            withIntermediateDirectories: true,
-        )
-
         let rawTaskID = taskID ?? request.taskID ?? "task"
-        let url = requestURL(taskID: rawTaskID)
-        let encoder = JSONEncoder()
-        encoder.dateEncodingStrategy = .iso8601
-        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
-        try encoder.encode(request).write(to: url, options: .atomic)
-        return url
+        return try store.write(request, id: rawTaskID)
     }
 
     static func fileName(id: String) -> String {
@@ -108,21 +81,6 @@ struct WorkBatchTaskRequestStore {
         _ rawValue: String,
         fallback: String,
     ) -> String {
-        let trimmed = rawValue.trimmingCharacters(in: .whitespacesAndNewlines)
-        let sanitized = trimmed.lowercased().map { character -> Character in
-            if character.isLetter || character.isNumber || character == "-" || character == "_" {
-                return character
-            }
-            return "-"
-        }
-        let collapsed = String(sanitized)
-            .split(separator: "-", omittingEmptySubsequences: true)
-            .joined(separator: "-")
-        let value = collapsed.isEmpty ? fallback : collapsed
-        return String(value.prefix(80))
-    }
-
-    private var directoryURL: URL {
-        worktreeURL.appendingPathComponent(Self.relativeDirectory, isDirectory: true)
+        WorkBatchArtifactCodec.sanitizedIdentifier(rawValue, fallback: fallback, maxLength: 80)
     }
 }

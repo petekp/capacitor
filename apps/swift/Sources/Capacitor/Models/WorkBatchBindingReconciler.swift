@@ -123,9 +123,8 @@ enum WorkBatchBindingReconciler {
                     binding.batchID,
                     in: &updatedState,
                     status: .waiting,
-                    summary: duplicateCockpitSummary(
-                        hasForeignDuplicate: !otherSessionIDs.isEmpty,
-                        hasDuplicateExactProcess: hasDuplicateExactProcess,
+                    attentionReason: .duplicateCockpit(
+                        assignedProcessDuplicate: hasDuplicateExactProcess && otherSessionIDs.isEmpty,
                     ),
                     queueUnfinishedTasks: true,
                     now: now,
@@ -161,7 +160,7 @@ enum WorkBatchBindingReconciler {
                         binding.batchID,
                         in: &updatedState,
                         status: .waiting,
-                        summary: "Claude Code session needs reconnect.",
+                        attentionReason: .needsReconnect,
                         queueUnfinishedTasks: true,
                         now: now,
                     )
@@ -197,7 +196,7 @@ enum WorkBatchBindingReconciler {
         // age out of transcript signals while still being a valid, visible
         // cockpit. Only treat that snapshot as live when it is safely idle.
         return gcReason == "signal_absence" &&
-            session.state.lowercased() == "ready" &&
+            session.state == .ready &&
             session.toolsInFlight == 0
     }
 
@@ -225,10 +224,10 @@ enum WorkBatchBindingReconciler {
             return true
         }
 
-        switch session.state.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() {
-        case "working", "compacting", "waiting":
+        switch session.state {
+        case .working, .compacting, .waiting:
             return true
-        default:
+        case .ready, .idle:
             return false
         }
     }
@@ -244,16 +243,6 @@ enum WorkBatchBindingReconciler {
             sessionIDs.insert("\(bindingSessionID) (duplicate process)")
         }
         return sessionIDs.sorted()
-    }
-
-    private static func duplicateCockpitSummary(
-        hasForeignDuplicate: Bool,
-        hasDuplicateExactProcess: Bool,
-    ) -> String {
-        if hasDuplicateExactProcess, !hasForeignDuplicate {
-            return "Claude Code is already open; click to re-enter."
-        }
-        return "Multiple Claude Code sessions match this Work Batch."
     }
 
     private static func shouldRemainLaunching(
@@ -279,29 +268,24 @@ enum WorkBatchBindingReconciler {
         return normalizedPath == normalizedRoot || normalizedPath.hasPrefix(normalizedRoot + "/")
     }
 
+    // The reconciler now records only STRUCTURAL facts (status + attentionReason
+    // + Task status) and never authors presentation prose. The displayed
+    // (status, summary) is recomputed by
+    // `WorkBatchProjectionBuilder.deriveBatchPresentation` from those facts.
+    // Each setter clears any prior `attentionReason` so a recovered batch does
+    // not keep showing a stale attention string.
+
     private static func markRunningIfUseful(
         _ batchID: String,
         in state: inout WorkBatchStateSnapshot,
         now: Date,
     ) {
-        guard let index = state.batches.firstIndex(where: { $0.id == batchID }) else { return }
+        guard state.batches.contains(where: { $0.id == batchID }) else { return }
         let tasks = state.tasks.filter { $0.batchID == batchID }
         guard tasks.contains(where: { $0.status != .done }) else {
             return
         }
-
-        var changed = false
-        if state.batches[index].status != .working {
-            state.batches[index].status = .working
-            changed = true
-        }
-        if shouldReplaceSummaryAfterRecovery(state.batches[index].currentActivitySummary) {
-            state.batches[index].currentActivitySummary = runningSummary(for: tasks)
-            changed = true
-        }
-        if changed {
-            state.batches[index].updatedAt = now
-        }
+        setBatchStructure(batchID, in: &state, status: .working, attentionReason: .none, now: now)
     }
 
     private static func markActiveCockpitIfUseful(
@@ -309,19 +293,7 @@ enum WorkBatchBindingReconciler {
         in state: inout WorkBatchStateSnapshot,
         now: Date,
     ) {
-        guard let index = state.batches.firstIndex(where: { $0.id == batchID }) else { return }
-        var changed = false
-        if state.batches[index].status != .working {
-            state.batches[index].status = .working
-            changed = true
-        }
-        if shouldReplaceSummaryForActiveCockpit(state.batches[index].currentActivitySummary) {
-            state.batches[index].currentActivitySummary = "Checking final result."
-            changed = true
-        }
-        if changed {
-            state.batches[index].updatedAt = now
-        }
+        setBatchStructure(batchID, in: &state, status: .working, attentionReason: .none, now: now)
     }
 
     private static func batchHasNoOpenTasks(
@@ -338,26 +310,11 @@ enum WorkBatchBindingReconciler {
         liveAssignedCockpitIsPresent: Bool,
         now: Date,
     ) {
-        guard let index = state.batches.firstIndex(where: { $0.id == batchID }) else { return }
+        // New Work Batch status rule: completed work with a live assigned cockpit
+        // stays Ready so the user can see Claude is still open and awaiting
+        // direction; otherwise it goes Idle.
         let targetStatus: WorkBatchStatus = liveAssignedCockpitIsPresent ? .ready : .idle
-        var changed = false
-        // New Work Batch status rule: completed work with a live assigned cockpit stays Ready
-        // so the user can see that Claude is still open and awaiting direction.
-        if state.batches[index].status != targetStatus {
-            state.batches[index].status = targetStatus
-            changed = true
-        }
-        let summary = state.batches[index].currentActivitySummary
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-        if shouldReplaceSummaryAfterCompletion(summary) {
-            state.batches[index].currentActivitySummary = completionSummary(
-                for: state.tasks.filter { $0.batchID == batchID },
-            )
-            changed = true
-        }
-        if changed {
-            state.batches[index].updatedAt = now
-        }
+        setBatchStructure(batchID, in: &state, status: targetStatus, attentionReason: .none, now: now)
     }
 
     private static func batchNeedsUser(
@@ -373,107 +330,21 @@ enum WorkBatchBindingReconciler {
         in state: inout WorkBatchStateSnapshot,
         now: Date,
     ) {
-        guard let index = state.batches.firstIndex(where: { $0.id == batchID }) else { return }
-        var changed = false
-        if state.batches[index].status != .waiting {
-            state.batches[index].status = .waiting
-            changed = true
-        }
-        let summary = state.batches[index].currentActivitySummary
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-        if shouldReplaceSummaryForUserInput(summary) {
-            state.batches[index].currentActivitySummary = "Checkpoint needs your input."
-            changed = true
-        }
-        if changed {
-            state.batches[index].updatedAt = now
-        }
+        // A pending checkpoint speaks for the batch in the projection, so the
+        // reconciler only needs to record the waiting status and clear any
+        // attention reason; the checkpoint question drives the summary.
+        setBatchStructure(batchID, in: &state, status: .waiting, attentionReason: .none, now: now)
     }
 
-    private static func shouldReplaceSummaryForUserInput(_ summary: String) -> Bool {
-        let normalized = summary.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        return normalized.isEmpty ||
-            normalized.contains("is working") ||
-            normalized.contains("is reconnecting") ||
-            normalized.contains("needs reconnect") ||
-            normalized.contains("needs attention") ||
-            normalized.contains("multiple claude code sessions")
-    }
-
-    private static func shouldReplaceSummaryAfterRecovery(_ summary: String) -> Bool {
-        let normalized = summary.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        return normalized.isEmpty ||
-            normalized.contains("is working in") ||
-            normalized.contains("needs reconnect") ||
-            normalized.contains("needs attention") ||
-            normalized.contains("multiple claude code sessions")
-    }
-
-    private static func shouldReplaceSummaryAfterCompletion(_ summary: String) -> Bool {
-        let normalized = summary.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        return normalized.isEmpty ||
-            normalized == "done: all tasks completed." ||
-            normalized == "all tasks done." ||
-            normalized.contains("is working") ||
-            normalized.contains("needs reconnect") ||
-            normalized.contains("needs attention") ||
-            normalized.contains("multiple claude code sessions")
-    }
-
-    private static func shouldReplaceSummaryForActiveCockpit(_ summary: String) -> Bool {
-        let normalized = summary.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        return normalized.isEmpty ||
-            normalized.hasPrefix("done:") ||
-            normalized.contains("is working in") ||
-            normalized.contains("needs reconnect") ||
-            normalized.contains("needs attention") ||
-            normalized.contains("multiple claude code sessions")
-    }
-
-    private static func runningSummary(for tasks: [WorkBatchTaskRecord]) -> String {
-        let activeTask = tasks.last { task in
-            task.status == .working || task.status == .queued
-        } ?? tasks.last { $0.status != .done }
-
-        guard let activeTask else {
-            return "Working on next step."
-        }
-        return "Working on \(activeTask.displayTitle)."
-    }
-
-    private static func completionSummary(for tasks: [WorkBatchTaskRecord]) -> String {
-        let completedTask = tasks
-            .filter { $0.status == .done }
-            .sorted {
-                if $0.updatedAt != $1.updatedAt {
-                    return $0.updatedAt > $1.updatedAt
-                }
-                return $0.createdAt > $1.createdAt
-            }
-            .first
-
-        guard let completedTask else {
-            return "Done."
-        }
-        return doneSummary(taskTitle: completedTask.displayTitle)
-    }
-
-    private static func doneSummary(taskTitle: String) -> String {
-        let title = taskTitle.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !title.isEmpty else { return "Done." }
-        if let last = title.last,
-           [".", "!", "?"].contains(last)
-        {
-            return "Done: \(title)"
-        }
-        return "Done: \(title)."
-    }
-
+    /// Sets the structural status + attention reason for a batch and clears the
+    /// recorded activity line when an attention reason is present (the attention
+    /// string is derived from the reason, not from prose). Optionally requeues
+    /// unfinished Tasks.
     private static func markBatch(
         _ batchID: String,
         in state: inout WorkBatchStateSnapshot,
         status: WorkBatchStatus,
-        summary: String,
+        attentionReason: WorkBatchAttentionReason,
         queueUnfinishedTasks: Bool = false,
         now: Date,
     ) {
@@ -483,8 +354,8 @@ enum WorkBatchBindingReconciler {
             state.batches[index].status = status
             changed = true
         }
-        if state.batches[index].currentActivitySummary != summary {
-            state.batches[index].currentActivitySummary = summary
+        if state.batches[index].attentionReason != attentionReason {
+            state.batches[index].attentionReason = attentionReason
             changed = true
         }
 
@@ -501,6 +372,28 @@ enum WorkBatchBindingReconciler {
             }
         }
 
+        if changed {
+            state.batches[index].updatedAt = now
+        }
+    }
+
+    private static func setBatchStructure(
+        _ batchID: String,
+        in state: inout WorkBatchStateSnapshot,
+        status: WorkBatchStatus,
+        attentionReason: WorkBatchAttentionReason,
+        now: Date,
+    ) {
+        guard let index = state.batches.firstIndex(where: { $0.id == batchID }) else { return }
+        var changed = false
+        if state.batches[index].status != status {
+            state.batches[index].status = status
+            changed = true
+        }
+        if state.batches[index].attentionReason != attentionReason {
+            state.batches[index].attentionReason = attentionReason
+            changed = true
+        }
         if changed {
             state.batches[index].updatedAt = now
         }

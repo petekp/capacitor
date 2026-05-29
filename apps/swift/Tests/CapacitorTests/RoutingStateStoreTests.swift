@@ -8,7 +8,7 @@ final class RoutingStateStoreTests: XCTestCase {
         let route = RuntimeRoutingView(
             workspaceId: "workspace-core",
             projectPath: "/tmp/core-project",
-            status: "attached",
+            status: .attached,
             target: CoreRoutingTarget(kind: "tmux_session", sessionName: "caps"),
             reasonCode: "TMUX_SESSION_ATTACHED",
             reason: "Attached tmux session",
@@ -28,7 +28,7 @@ final class RoutingStateStoreTests: XCTestCase {
         let route = RuntimeRoutingView(
             workspaceId: "workspace-core",
             projectPath: "/tmp/core-project",
-            status: "attached",
+            status: .attached,
             target: CoreRoutingTarget(kind: "tmux_session", sessionName: "caps"),
             reasonCode: "TMUX_SESSION_ATTACHED",
             reason: "Attached tmux session",
@@ -49,7 +49,7 @@ final class RoutingStateStoreTests: XCTestCase {
             RuntimeRoutingView(
                 workspaceId: "workspace-core",
                 projectPath: "/tmp/core-project",
-                status: "attached",
+                status: .attached,
                 target: CoreRoutingTarget(kind: "tmux_session", sessionName: "caps"),
                 reasonCode: "TMUX_SESSION_ATTACHED",
                 reason: "Attached tmux session",

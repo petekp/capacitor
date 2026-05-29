@@ -1,14 +1,11 @@
-mod observation_journal;
-
 use std::fs;
 use std::os::unix::io::AsRawFd;
 use std::path::{Path, PathBuf};
 
 use crate::domain::AppSnapshot;
-pub use observation_journal::{InMemoryObservationJournalStore, ObservationJournalStore};
 
 /// Snapshot disk format version (incremented when AppSnapshot serialization changes).
-pub(crate) const CURRENT_SNAPSHOT_SCHEMA_VERSION: u32 = 1;
+pub(crate) const DISK_FORMAT_VERSION: u32 = 1;
 
 pub trait SnapshotStorage: Send + Sync {
     fn load_snapshot(&self) -> Result<Option<AppSnapshot>, String>;
@@ -202,14 +199,14 @@ impl SnapshotStorage for JsonFileSnapshotStorage {
 
         match Self::read_snapshot_file(&self.path) {
             Ok(snapshot) => {
-                if snapshot.snapshot_version != CURRENT_SNAPSHOT_SCHEMA_VERSION as u64 {
+                if snapshot.disk_format_version != DISK_FORMAT_VERSION as u64 {
                     let quarantine_path = self.path.with_extension("json.quarantined");
                     if let Err(e) = fs::rename(&self.path, &quarantine_path) {
                         eprintln!("[capacitor-core] failed to quarantine snapshot: {e}");
                     } else {
                         eprintln!(
-                            "[capacitor-core] quarantined snapshot with snapshot version {} (expected {}): {}",
-                            snapshot.snapshot_version, CURRENT_SNAPSHOT_SCHEMA_VERSION, quarantine_path.display()
+                            "[capacitor-core] quarantined snapshot with disk format version {} (expected {}): {}",
+                            snapshot.disk_format_version, DISK_FORMAT_VERSION, quarantine_path.display()
                         );
                     }
                     Ok(None)
@@ -239,7 +236,7 @@ impl SnapshotStorage for JsonFileSnapshotStorage {
         Self::ensure_parent_dir(&self.path)?;
 
         let mut versioned = snapshot.clone();
-        versioned.snapshot_version = CURRENT_SNAPSHOT_SCHEMA_VERSION as u64;
+        versioned.disk_format_version = DISK_FORMAT_VERSION as u64;
         let payload = serde_json::to_vec_pretty(&versioned)
             .map_err(|error| format!("failed serializing snapshot: {error}"))?;
 
@@ -391,7 +388,8 @@ mod tests {
             delegations: vec![],
             runs,
             generated_at: "2026-02-28T00:00:00Z".to_string(),
-            snapshot_version: 0,
+            change_version: 0,
+            disk_format_version: 0,
             schema_version: 0,
         }
     }
@@ -631,15 +629,15 @@ mod tests {
     }
 
     #[test]
-    fn test_save_stamps_snapshot_version_and_syncs() {
+    fn test_save_stamps_disk_format_version_and_syncs() {
         let temp_dir = tempfile::tempdir().expect("temp dir");
         let path = temp_dir.path().join("snapshot").join("app_snapshot.json");
 
         let storage = JsonFileSnapshotStorage::new(&path);
         let snapshot = fixture_snapshot("sync-test", 1);
         assert_eq!(
-            snapshot.snapshot_version, 0,
-            "fixture should have version 0"
+            snapshot.disk_format_version, 0,
+            "fixture should have disk format version 0"
         );
 
         storage.save_snapshot(&snapshot).expect("save");
@@ -647,16 +645,16 @@ mod tests {
         let raw = fs::read_to_string(&path).expect("read raw file");
         let on_disk: AppSnapshot = serde_json::from_str(&raw).expect("parse");
         assert_eq!(
-            on_disk.snapshot_version,
-            super::CURRENT_SNAPSHOT_SCHEMA_VERSION as u64,
-            "save should stamp snapshot_version"
+            on_disk.disk_format_version,
+            super::DISK_FORMAT_VERSION as u64,
+            "save should stamp disk_format_version"
         );
         assert_eq!(on_disk.runs.len(), 1);
         assert_eq!(on_disk.runs[0].id, "run-sync-test-0");
     }
 
     #[test]
-    fn test_load_quarantines_legacy_snapshot_version() {
+    fn test_load_quarantines_legacy_disk_format_version() {
         let temp_dir = tempfile::tempdir().expect("temp dir");
         let path = temp_dir.path().join("snapshot").join("app_snapshot.json");
         let quarantine_path = path.with_extension("json.quarantined");
@@ -664,7 +662,7 @@ mod tests {
         JsonFileSnapshotStorage::ensure_parent_dir(&path).expect("create parent dir");
 
         let legacy = fixture_snapshot("legacy", 1);
-        assert_eq!(legacy.snapshot_version, 0);
+        assert_eq!(legacy.disk_format_version, 0);
         let payload = serde_json::to_string_pretty(&legacy).expect("serialize");
         fs::write(&path, payload).expect("write legacy snapshot");
 
@@ -684,7 +682,7 @@ mod tests {
     }
 
     #[test]
-    fn test_load_accepts_current_snapshot_version() {
+    fn test_load_accepts_current_disk_format_version() {
         let temp_dir = tempfile::tempdir().expect("temp dir");
         let path = temp_dir.path().join("snapshot").join("app_snapshot.json");
 
@@ -697,15 +695,15 @@ mod tests {
             .expect("load")
             .expect("current-version snapshot should load");
         assert_eq!(
-            loaded.snapshot_version,
-            super::CURRENT_SNAPSHOT_SCHEMA_VERSION as u64
+            loaded.disk_format_version,
+            super::DISK_FORMAT_VERSION as u64
         );
         assert_eq!(loaded.runs.len(), 1);
         assert_eq!(loaded.runs[0].id, "run-current-0");
     }
 
     #[test]
-    fn test_load_quarantines_future_snapshot_version() {
+    fn test_load_quarantines_future_disk_format_version() {
         let temp_dir = tempfile::tempdir().expect("temp dir");
         let path = temp_dir.path().join("snapshot").join("app_snapshot.json");
         let quarantine_path = path.with_extension("json.quarantined");
@@ -713,7 +711,7 @@ mod tests {
         JsonFileSnapshotStorage::ensure_parent_dir(&path).expect("create parent dir");
 
         let mut future = fixture_snapshot("future", 1);
-        future.snapshot_version = (super::CURRENT_SNAPSHOT_SCHEMA_VERSION as u64) + 99;
+        future.disk_format_version = (super::DISK_FORMAT_VERSION as u64) + 99;
         let payload = serde_json::to_string_pretty(&future).expect("serialize");
         fs::write(&path, payload).expect("write future snapshot");
 

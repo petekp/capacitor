@@ -13,13 +13,7 @@ struct StatusIndicator: View {
     }
 
     private var statusText: String {
-        switch state {
-        case .ready: "Ready"
-        case .working: "Working"
-        case .waiting: "Waiting"
-        case .compacting: "Compacting"
-        case .idle: "Idle"
-        }
+        state.presentation.statusText
     }
 
     private var isActive: Bool {
@@ -52,13 +46,7 @@ struct StatusIndicator: View {
     }
 
     private var accessibilityDescription: String {
-        switch state {
-        case .ready: "Ready for input"
-        case .working: "Currently working on a task"
-        case .waiting: "Waiting for user action"
-        case .compacting: "Compacting conversation history"
-        case .idle: "Session is idle"
-        }
+        state.presentation.accessibilityDescription
     }
 }
 

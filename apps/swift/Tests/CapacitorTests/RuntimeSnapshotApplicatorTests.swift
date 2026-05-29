@@ -18,7 +18,7 @@ final class RuntimeSnapshotApplicatorTests: XCTestCase {
                 shellCwd: "/baseline",
                 shellPid: "111",
                 runs: [baselineRun],
-                snapshotVersion: 4,
+                changeVersion: 4,
             ),
             context: baselineContext,
         )
@@ -33,7 +33,7 @@ final class RuntimeSnapshotApplicatorTests: XCTestCase {
                 shellCwd: "/stale",
                 shellPid: "111",
                 runs: [staleRun],
-                snapshotVersion: 99,
+                changeVersion: 99,
             ),
             context: staleContext,
         )
@@ -98,7 +98,7 @@ final class RuntimeSnapshotApplicatorTests: XCTestCase {
                         projectId: nil,
                         workspaceId: nil,
                         projectPath: project.path,
-                        state: "idle",
+                        state: .idle,
                         updatedAt: "2026-03-05T00:00:00Z",
                         stateChangedAt: "2026-03-05T00:00:00Z",
                         sessionId: "runtime-session",
@@ -113,7 +113,7 @@ final class RuntimeSnapshotApplicatorTests: XCTestCase {
                 routingViews: [],
                 delegations: [],
                 runs: [],
-                snapshotVersion: 0,
+                changeVersion: 0,
             ),
             context: fixture.applicator.beginFetch(projects: [project]),
         )
@@ -136,7 +136,7 @@ final class RuntimeSnapshotApplicatorTests: XCTestCase {
                 routingViews: [],
                 delegations: [],
                 runs: [runA, runB],
-                snapshotVersion: 0,
+                changeVersion: 0,
             ),
             context: fixture.applicator.beginFetch(projects: []),
         )
@@ -242,7 +242,7 @@ final class RuntimeSnapshotApplicatorTests: XCTestCase {
                 shellCwd: "/baseline",
                 shellPid: "111",
                 runs: [baselineRun],
-                snapshotVersion: 9,
+                changeVersion: 9,
             ),
             context: context,
         )
@@ -260,7 +260,7 @@ final class RuntimeSnapshotApplicatorTests: XCTestCase {
                 shellCwd: "/updated",
                 shellPid: "111",
                 runs: [updatedRun],
-                snapshotVersion: 9,
+                changeVersion: 9,
             ),
             context: context,
         )
@@ -296,7 +296,7 @@ final class RuntimeSnapshotApplicatorTests: XCTestCase {
                 sessionId: "runtime-session",
                 shellCwd: "/baseline",
                 shellPid: "111",
-                snapshotVersion: 9,
+                changeVersion: 9,
                 state: "idle",
                 activeCount: 0,
             ),
@@ -312,7 +312,7 @@ final class RuntimeSnapshotApplicatorTests: XCTestCase {
                 sessionId: "changed-session-ignored",
                 shellCwd: "/changed-ignored",
                 shellPid: "111",
-                snapshotVersion: 9,
+                changeVersion: 9,
                 state: "working",
             ),
             context: context,
@@ -328,7 +328,7 @@ final class RuntimeSnapshotApplicatorTests: XCTestCase {
                 sessionId: "changed-session-ignored",
                 shellCwd: "/changed-ignored",
                 shellPid: "111",
-                snapshotVersion: 9,
+                changeVersion: 9,
                 state: "working",
             ),
             context: context,
@@ -356,7 +356,7 @@ final class RuntimeSnapshotApplicatorTests: XCTestCase {
                 shellCwd: "/baseline",
                 shellPid: "111",
                 runs: [baselineRun],
-                snapshotVersion: 12,
+                changeVersion: 12,
             ),
             context: context,
         )
@@ -374,7 +374,7 @@ final class RuntimeSnapshotApplicatorTests: XCTestCase {
                 shellCwd: "/stale",
                 shellPid: "111",
                 runs: [staleRun],
-                snapshotVersion: 11,
+                changeVersion: 11,
             ),
             context: context,
         )
@@ -407,7 +407,7 @@ final class RuntimeSnapshotApplicatorTests: XCTestCase {
                 shellCwd: "/baseline",
                 shellPid: "111",
                 runs: [baselineRun],
-                snapshotVersion: 0,
+                changeVersion: 0,
             ),
             context: context,
         )
@@ -425,7 +425,7 @@ final class RuntimeSnapshotApplicatorTests: XCTestCase {
                 shellCwd: "/updated",
                 shellPid: "111",
                 runs: [updatedRun],
-                snapshotVersion: 0,
+                changeVersion: 0,
             ),
             context: context,
         )
@@ -464,7 +464,7 @@ final class RuntimeSnapshotApplicatorTests: XCTestCase {
                         gcReason: "pid_reaped",
                     ),
                 ],
-                snapshotVersion: 12,
+                changeVersion: 12,
             ),
             context: fixture.applicator.beginFetch(projects: [project]),
         )
@@ -524,7 +524,7 @@ final class RuntimeSnapshotApplicatorTests: XCTestCase {
         delegations: [RuntimeDelegationState] = [],
         runs: [RuntimeRunState] = [],
         runtimeSessions: [RuntimeSession] = [],
-        snapshotVersion: UInt64 = 0,
+        changeVersion: UInt64 = 0,
         state: String = "working",
         activeCount: Int = 1,
     ) -> RuntimeSnapshot {
@@ -535,7 +535,7 @@ final class RuntimeSnapshotApplicatorTests: XCTestCase {
                     projectId: nil,
                     workspaceId: nil,
                     projectPath: projectPath,
-                    state: state,
+                    state: try! SessionState.decode(wire: state),
                     updatedAt: timestamp,
                     stateChangedAt: timestamp,
                     sessionId: sessionId,
@@ -563,7 +563,7 @@ final class RuntimeSnapshotApplicatorTests: XCTestCase {
                 RuntimeRoutingView(
                     workspaceId: projectPath,
                     projectPath: projectPath,
-                    status: "attached",
+                    status: .attached,
                     target: CoreRoutingTarget(kind: "tmux_session", sessionName: sessionId),
                     reasonCode: "TMUX_SESSION_ATTACHED",
                     reason: "Attached tmux session",
@@ -572,7 +572,7 @@ final class RuntimeSnapshotApplicatorTests: XCTestCase {
             ],
             delegations: delegations,
             runs: runs,
-            snapshotVersion: snapshotVersion,
+            changeVersion: changeVersion,
         )
     }
 
@@ -585,7 +585,7 @@ final class RuntimeSnapshotApplicatorTests: XCTestCase {
         return RuntimeSession(
             sessionId: sessionId,
             pid: 4242,
-            state: "working",
+            state: .working,
             cwd: projectPath,
             projectId: nil,
             workspaceId: nil,
@@ -610,7 +610,7 @@ final class RuntimeSnapshotApplicatorTests: XCTestCase {
             worktreeName: "worker-1",
             worktreePath: "\(projectPath)-worker-1",
             sessionId: "session-1",
-            status: "active",
+            status: .working,
             startedAt: "2026-03-05T00:00:00Z",
             updatedAt: "2026-03-05T00:00:00Z",
             currentReview: nil,
@@ -623,7 +623,7 @@ final class RuntimeSnapshotApplicatorTests: XCTestCase {
             projectPath: projectPath,
             methodId: "checkpoint-review",
             methodName: "Checkpoint Review",
-            status: "paused",
+            status: .paused,
             sessionId: "session-1",
             delegationWorkerId: nil,
             statusMessage: nil,

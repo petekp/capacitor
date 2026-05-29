@@ -119,7 +119,7 @@ struct DelegationReviewWindow: View {
             }
         }
         .onChange(of: delegation?.status) { _, newValue in
-            guard case .submitted = phase, newValue == "resume_failed" else { return }
+            guard case .submitted = phase, newValue == .resumeFailed else { return }
             autoCloseTask?.cancel()
             phase = .failed("Couldn't resume the worker. The review stayed pending, your decision wasn't lost, and you can retry.")
         }

@@ -20,7 +20,9 @@ final class WorkBatchBindingReconcilerTests: XCTestCase {
 
         XCTAssertEqual(result.bindings[0].status, .running)
         XCTAssertEqual(result.state.batches[0].status, .working)
-        XCTAssertEqual(result.state.batches[0].currentActivitySummary, "Working on Add green border.")
+        XCTAssertEqual(attentionReason(result), WorkBatchAttentionReason.none)
+        // Single queued Task under .working re-derives to the queued line.
+        XCTAssertEqual(derivedSummary(result), "Queued Add green border.")
         XCTAssertTrue(result.issues.isEmpty)
     }
 
@@ -37,7 +39,8 @@ final class WorkBatchBindingReconcilerTests: XCTestCase {
 
         XCTAssertEqual(result.bindings[0].status, .stale)
         XCTAssertEqual(result.state.batches[0].status, .waiting)
-        XCTAssertEqual(result.state.batches[0].currentActivitySummary, "Claude Code session needs reconnect.")
+        XCTAssertEqual(attentionReason(result), .needsReconnect)
+        XCTAssertEqual(derivedSummary(result), "Claude Code session needs reconnect.")
         XCTAssertEqual(result.state.tasks[0].status, .queued)
         XCTAssertEqual(result.issues.map(\.kind), [.missingCockpit])
     }
@@ -61,7 +64,8 @@ final class WorkBatchBindingReconcilerTests: XCTestCase {
 
         XCTAssertEqual(result.bindings[0].status, .running)
         XCTAssertEqual(result.state.batches[0].status, .working)
-        XCTAssertEqual(result.state.batches[0].currentActivitySummary, "Working on Add green border.")
+        XCTAssertEqual(attentionReason(result), WorkBatchAttentionReason.none)
+        XCTAssertEqual(derivedSummary(result), "Queued Add green border.")
         XCTAssertTrue(result.issues.isEmpty)
     }
 
@@ -85,7 +89,8 @@ final class WorkBatchBindingReconcilerTests: XCTestCase {
 
         XCTAssertEqual(result.bindings[0].status, .running)
         XCTAssertEqual(result.state.batches[0].status, .working)
-        XCTAssertEqual(result.state.batches[0].currentActivitySummary, "Working on Add green border.")
+        XCTAssertEqual(attentionReason(result), WorkBatchAttentionReason.none)
+        XCTAssertEqual(derivedSummary(result), "Queued Add green border.")
         XCTAssertTrue(result.issues.isEmpty)
     }
 
@@ -109,7 +114,8 @@ final class WorkBatchBindingReconcilerTests: XCTestCase {
 
         XCTAssertEqual(result.bindings[0].status, .stale)
         XCTAssertEqual(result.state.batches[0].status, .waiting)
-        XCTAssertEqual(result.state.batches[0].currentActivitySummary, "Claude Code session needs reconnect.")
+        XCTAssertEqual(attentionReason(result), .needsReconnect)
+        XCTAssertEqual(derivedSummary(result), "Claude Code session needs reconnect.")
         XCTAssertEqual(result.issues.map(\.kind), [.missingCockpit])
     }
 
@@ -133,7 +139,8 @@ final class WorkBatchBindingReconcilerTests: XCTestCase {
 
         XCTAssertEqual(result.bindings[0].status, .stale)
         XCTAssertEqual(result.state.batches[0].status, .waiting)
-        XCTAssertEqual(result.state.batches[0].currentActivitySummary, "Claude Code session needs reconnect.")
+        XCTAssertEqual(attentionReason(result), .needsReconnect)
+        XCTAssertEqual(derivedSummary(result), "Claude Code session needs reconnect.")
         XCTAssertEqual(result.issues.map(\.kind), [.missingCockpit])
     }
 
@@ -152,7 +159,8 @@ final class WorkBatchBindingReconcilerTests: XCTestCase {
 
         XCTAssertEqual(result.bindings[0].status, .waiting)
         XCTAssertEqual(result.state.batches[0].status, .waiting)
-        XCTAssertEqual(result.state.batches[0].currentActivitySummary, "Claude Code is already open; click to re-enter.")
+        XCTAssertEqual(attentionReason(result), .duplicateCockpit(assignedProcessDuplicate: true))
+        XCTAssertEqual(derivedSummary(result), "Claude Code is already open; click to re-enter.")
         XCTAssertEqual(result.state.tasks[0].status, .queued)
         XCTAssertEqual(result.issues.map(\.kind), [.duplicateCockpit])
         XCTAssertTrue(result.issues[0].sessionIDs.contains("session-batch (duplicate process)"))
@@ -169,7 +177,9 @@ final class WorkBatchBindingReconcilerTests: XCTestCase {
 
         XCTAssertEqual(result.bindings[0].status, .launching)
         XCTAssertEqual(result.state.batches[0].status, .working)
-        XCTAssertEqual(result.state.batches[0].currentActivitySummary, "Claude Code is starting on Add green border.")
+        XCTAssertEqual(attentionReason(result), WorkBatchAttentionReason.none)
+        // Single queued Task under .working re-derives to the queued line.
+        XCTAssertEqual(derivedSummary(result), "Queued Add green border.")
         XCTAssertTrue(result.issues.isEmpty)
     }
 
@@ -217,7 +227,8 @@ final class WorkBatchBindingReconcilerTests: XCTestCase {
 
         XCTAssertEqual(result.bindings[0].status, .waiting)
         XCTAssertEqual(result.state.batches[0].status, .waiting)
-        XCTAssertEqual(result.state.batches[0].currentActivitySummary, "Multiple Claude Code sessions match this Work Batch.")
+        XCTAssertEqual(attentionReason(result), .duplicateCockpit(assignedProcessDuplicate: false))
+        XCTAssertEqual(derivedSummary(result), "Multiple Claude Code sessions match this Work Batch.")
         XCTAssertEqual(result.state.tasks[0].status, .queued)
         XCTAssertEqual(result.issues.map(\.kind), [.duplicateCockpit])
     }
@@ -293,7 +304,8 @@ final class WorkBatchBindingReconcilerTests: XCTestCase {
 
         XCTAssertEqual(result.bindings[0].status, .running)
         XCTAssertEqual(result.state.batches[0].status, .working)
-        XCTAssertEqual(result.state.batches[0].currentActivitySummary, "Checking final result.")
+        XCTAssertEqual(attentionReason(result), WorkBatchAttentionReason.none)
+        XCTAssertEqual(derivedSummary(result), "Checking final result.")
         XCTAssertEqual(result.state.tasks[0].status, .done)
         XCTAssertTrue(result.issues.isEmpty)
     }
@@ -320,14 +332,16 @@ final class WorkBatchBindingReconcilerTests: XCTestCase {
 
         XCTAssertEqual(result.bindings[0].status, .running)
         XCTAssertEqual(result.state.batches[0].status, .working)
-        XCTAssertEqual(result.state.batches[0].currentActivitySummary, "Checking final result.")
+        XCTAssertEqual(attentionReason(result), WorkBatchAttentionReason.none)
+        XCTAssertEqual(derivedSummary(result), "Checking final result.")
         XCTAssertEqual(result.state.tasks[0].status, .done)
         XCTAssertTrue(result.issues.isEmpty)
     }
 
     func testDoneBatchRecordsDuplicateOldCockpitsWithoutPullingWorkBackToWaiting() {
         let now = Date(timeIntervalSince1970: 1_775_000_200)
-        var inputState = state(status: .waiting, summary: "Multiple Claude Code sessions match this Work Batch.")
+        var inputState = state(status: .waiting, summary: "")
+        inputState.batches[0].attentionReason = .duplicateCockpit(assignedProcessDuplicate: false)
         inputState.tasks[0].status = .done
         let inputBinding = binding(status: .waiting)
 
@@ -353,7 +367,10 @@ final class WorkBatchBindingReconcilerTests: XCTestCase {
 
         XCTAssertEqual(result.bindings[0].status, .done)
         XCTAssertEqual(result.state.batches[0].status, .ready)
-        XCTAssertEqual(result.state.batches[0].currentActivitySummary, "Done: Add green border.")
+        // markDoneIfUseful clears the duplicate attention reason; the completed
+        // batch's empty recorded line re-derives to the completion summary.
+        XCTAssertEqual(attentionReason(result), WorkBatchAttentionReason.none)
+        XCTAssertEqual(derivedSummary(result), "Done: Add green border.")
         XCTAssertEqual(result.issues.map(\.kind), [.duplicateCockpit])
         XCTAssertEqual(
             result.issues[0].sessionIDs,
@@ -553,7 +570,8 @@ final class WorkBatchBindingReconcilerTests: XCTestCase {
 
     func testPendingCheckpointReclaimsReconnectSummary() {
         let now = Date(timeIntervalSince1970: 1_775_000_200)
-        var inputState = state(status: .waiting, summary: "Claude Code session needs reconnect.")
+        var inputState = state(status: .waiting, summary: "")
+        inputState.batches[0].attentionReason = .needsReconnect
         inputState.tasks[0].status = .needsYou
         inputState.checkpoints = [
             WorkBatchCheckpointRecord(
@@ -580,14 +598,17 @@ final class WorkBatchBindingReconcilerTests: XCTestCase {
 
         XCTAssertEqual(result.bindings[0].status, .stale)
         XCTAssertEqual(result.state.batches[0].status, .waiting)
-        XCTAssertEqual(result.state.batches[0].currentActivitySummary, "Checkpoint needs your input.")
+        // Pending checkpoint precedence: the stale reconnect reason no longer
+        // matches the checkpoint question, so the generic prompt is derived.
+        XCTAssertEqual(derivedSummary(result), "Checkpoint needs your input.")
         XCTAssertEqual(result.state.tasks[0].status, .needsYou)
         XCTAssertEqual(result.issues.map(\.kind), [.missingCockpit])
     }
 
     func testPersistentStaleBindingDoesNotChurnTimestamps() {
         let now = Date(timeIntervalSince1970: 1_775_000_200)
-        let inputState = state(status: .waiting, summary: "Claude Code session needs reconnect.")
+        var inputState = state(status: .waiting, summary: "")
+        inputState.batches[0].attentionReason = .needsReconnect
         let inputBinding = binding(status: .stale)
 
         let result = WorkBatchBindingReconciler.reconcile(
@@ -604,7 +625,8 @@ final class WorkBatchBindingReconcilerTests: XCTestCase {
 
     func testPersistentDuplicateBindingDoesNotChurnTimestamps() {
         let now = Date(timeIntervalSince1970: 1_775_000_200)
-        let inputState = state(status: .waiting, summary: "Multiple Claude Code sessions match this Work Batch.")
+        var inputState = state(status: .waiting, summary: "")
+        inputState.batches[0].attentionReason = .duplicateCockpit(assignedProcessDuplicate: false)
         let inputBinding = binding(status: .waiting)
 
         let result = WorkBatchBindingReconciler.reconcile(
@@ -628,6 +650,26 @@ final class WorkBatchBindingReconcilerTests: XCTestCase {
         XCTAssertEqual(result.state, inputState)
         XCTAssertEqual(result.bindings, [inputBinding])
         XCTAssertEqual(result.issues.map(\.kind), [.duplicateCockpit])
+    }
+
+    /// Projects the reconciled state through the single presentation
+    /// derivation the UI consumes. The reconciler now records only structural
+    /// facts (status + attentionReason), so the displayed summary is asserted
+    /// via the projection rather than the stored `currentActivitySummary`.
+    private func derivedSummary(
+        _ result: WorkBatchBindingReconciliationResult,
+        batchID: String = "batch-mobile",
+    ) -> String? {
+        WorkBatchProjectionBuilder.build(state: result.state, bindings: result.bindings)
+            .first(where: { $0.id == batchID })?
+            .currentActivitySummary
+    }
+
+    private func attentionReason(
+        _ result: WorkBatchBindingReconciliationResult,
+        batchID: String = "batch-mobile",
+    ) -> WorkBatchAttentionReason? {
+        result.state.batches.first(where: { $0.id == batchID })?.attentionReason
     }
 
     private func state(
@@ -697,7 +739,7 @@ final class WorkBatchBindingReconcilerTests: XCTestCase {
         RuntimeSession(
             sessionId: sessionId,
             pid: 1234,
-            state: state,
+            state: try! SessionState.decode(wire: state),
             cwd: cwd,
             projectId: nil,
             workspaceId: nil,

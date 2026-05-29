@@ -189,8 +189,14 @@ pub struct AppSnapshot {
     pub runs: Vec<super::run_types::RunState>,
     pub diagnostics: DiagnosticsSummary,
     pub generated_at: String,
+    /// Live change counter (AtomicU64) stamped by `core_query::app_snapshot`.
+    /// This is the ordered counter the wire + Swift applicator consume.
     #[serde(default)]
-    pub snapshot_version: u64,
+    pub change_version: u64,
+    /// Disk format version owned by `storage`; used for load-time quarantine.
+    /// Stamped to `DISK_FORMAT_VERSION` on save; reduce/query leave it default.
+    #[serde(default)]
+    pub disk_format_version: u64,
     #[serde(default)]
     pub schema_version: u32,
 }
@@ -355,39 +361,6 @@ pub struct MutateProjectCommand {
     pub kind: ProjectMutationKind,
     pub project_path: String,
     pub display_name: Option<String>,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize, uniffi::Enum)]
-#[serde(rename_all = "snake_case")]
-pub enum IdeaMutationKind {
-    Add,
-    Update,
-    Remove,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize, uniffi::Record)]
-pub struct MutateIdeaCommand {
-    pub kind: IdeaMutationKind,
-    pub project_path: String,
-    pub idea_id: String,
-    pub title: Option<String>,
-    pub description: Option<String>,
-    pub status: Option<String>,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize, uniffi::Enum)]
-#[serde(rename_all = "snake_case")]
-pub enum WorktreeMutationKind {
-    Create,
-    Remove,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize, uniffi::Record)]
-pub struct MutateWorktreeCommand {
-    pub kind: WorktreeMutationKind,
-    pub repo_path: String,
-    pub worktree_name: String,
-    pub force: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize, uniffi::Record)]

@@ -22,15 +22,13 @@ enum SetupTestFixtures {
         dependencies: [DependencyStatus],
         hooks: HookStatus,
         storageReady: Bool = true,
-        allReady: Bool = true,
-        blockingReason: String? = nil,
+        readiness: SetupReadiness = .ready,
     ) -> SetupStatus {
         SetupStatus(
             dependencies: dependencies,
             hooks: hooks,
             storageReady: storageReady,
-            allReady: allReady,
-            blockingReason: blockingReason,
+            readiness: readiness,
         )
     }
 

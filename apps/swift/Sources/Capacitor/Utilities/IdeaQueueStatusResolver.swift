@@ -107,26 +107,27 @@ enum IdeaQueueStatusResolver {
         runState: RuntimeRunState?,
     ) -> IdeaQueueActivity? {
         if let delegationState, delegationState.ideaId == idea.id {
-            if delegationState.status == "review_needed", delegationState.currentReview != nil {
-                return .reviewReady
-            }
-
-            if delegationState.status == "resume_failed", delegationState.currentReview != nil {
-                return .reviewReady
-            }
-
-            if delegationState.status == "working" || delegationState.status == "resume_pending" {
+            switch delegationState.status {
+            case .reviewNeeded, .resumeFailed:
+                if delegationState.currentReview != nil {
+                    return .reviewReady
+                }
+            case .working, .resumePending:
                 return .delegationWorking
             }
         }
 
         if let runState, runState.ideaId == idea.id {
-            if runState.status == "paused", runState.activeCheckpoint != nil {
-                return .methodCheckpointReady
-            }
-            if runState.status == "active" || runState.status == "created" {
+            switch runState.status {
+            case .paused:
+                if runState.activeCheckpoint != nil {
+                    return .methodCheckpointReady
+                }
+            case .active, .created:
                 let label = runState.statusMessage ?? runState.methodName
                 return .methodRunning(phaseName: label)
+            case .completed, .failed, .cancelled:
+                break
             }
         }
 

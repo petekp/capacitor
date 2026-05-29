@@ -7,19 +7,10 @@ enum WorkBatchStatus: String, Codable, Equatable {
     case compacting
     case idle
 
+    /// The short status word, sourced from the canonical SessionState presentation
+    /// via the existing `.sessionState` bridge so it never diverges from card chips.
     var label: String {
-        switch self {
-        case .ready:
-            "Ready"
-        case .working:
-            "Working"
-        case .waiting:
-            "Waiting"
-        case .compacting:
-            "Compacting"
-        case .idle:
-            "Idle"
-        }
+        sessionState.presentation.statusText
     }
 
     var sessionState: SessionState {
@@ -43,6 +34,110 @@ enum WorkBatchTaskStatus: String, Codable, Equatable {
     case working
     case needsYou = "needs_you"
     case done
+}
+
+/// Structural attention state for a Work Batch.
+///
+/// Before the T2 teardown these states were smuggled into the
+/// `currentActivitySummary` prose and then re-detected with string-sniffing
+/// guards. They are now a persisted, typed fact the reducer (router +
+/// reconciler) owns, and `WorkBatchProjectionBuilder.deriveBatchPresentation`
+/// maps each variant to its exact display string. `.none` is the default for
+/// any batch that has no outstanding attention condition (the steady state),
+/// and any older on-disk batch that predates this field decodes to `.none`.
+enum WorkBatchAttentionReason: Codable, Equatable {
+    /// Steady state: no attention condition; presentation derives from facts.
+    case none
+    /// Two or more Claude Code cockpits resolve to this batch's worktree.
+    /// `assignedProcessDuplicate` is the "same assigned session, duplicate
+    /// process" variant (the operator can simply re-enter), distinct from a
+    /// foreign duplicate (genuinely ambiguous, must be resolved).
+    case duplicateCockpit(assignedProcessDuplicate: Bool)
+    /// A queued Task was delivered to a live cockpit that never claimed it
+    /// inside the pickup window. `taskID`/`taskTitle` name the stuck Task.
+    case pickupTimeout(taskID: String, taskTitle: String)
+    /// A session launch / resume / wake / context-mirror write failed.
+    case launchFailed
+    /// A wake of an existing cockpit failed with no Task to re-queue. Kept
+    /// distinct from `.deliveryFailure` so the operator sees the wake-specific
+    /// string ("Claude Code wake needs attention.") exactly as before the T2
+    /// teardown.
+    case wakeFailed
+    /// Delivery to the cockpit could not complete (mirror or wake fault).
+    case deliveryFailure
+    /// No live Claude Code session matched the binding; needs reconnect.
+    case needsReconnect
+
+    private enum CodingKeys: String, CodingKey {
+        case kind
+        case assignedProcessDuplicate = "assigned_process_duplicate"
+        case taskID = "task_id"
+        case taskTitle = "task_title"
+    }
+
+    private enum Kind: String, Codable {
+        case none
+        case duplicateCockpit = "duplicate_cockpit"
+        case pickupTimeout = "pickup_timeout"
+        case launchFailed = "launch_failed"
+        case wakeFailed = "wake_failed"
+        case deliveryFailure = "delivery_failure"
+        case needsReconnect = "needs_reconnect"
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        // This is a LOCAL persisted enum, not a wire-status contract. Decode the
+        // raw discriminator string and map any absent OR unrecognized/future
+        // kind to `.none` so an older build can still load a state file written
+        // by a newer build (graceful forward-compat) rather than failing the
+        // whole snapshot decode.
+        let rawKind = try container.decodeIfPresent(String.self, forKey: .kind)
+        let kind = rawKind.flatMap(Kind.init(rawValue:)) ?? .none
+        switch kind {
+        case .none:
+            self = .none
+        case .duplicateCockpit:
+            let assignedProcessDuplicate = try container
+                .decodeIfPresent(Bool.self, forKey: .assignedProcessDuplicate) ?? false
+            self = .duplicateCockpit(assignedProcessDuplicate: assignedProcessDuplicate)
+        case .pickupTimeout:
+            let taskID = try container.decodeIfPresent(String.self, forKey: .taskID) ?? ""
+            let taskTitle = try container.decodeIfPresent(String.self, forKey: .taskTitle) ?? ""
+            self = .pickupTimeout(taskID: taskID, taskTitle: taskTitle)
+        case .launchFailed:
+            self = .launchFailed
+        case .wakeFailed:
+            self = .wakeFailed
+        case .deliveryFailure:
+            self = .deliveryFailure
+        case .needsReconnect:
+            self = .needsReconnect
+        }
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        switch self {
+        case .none:
+            try container.encode(Kind.none, forKey: .kind)
+        case let .duplicateCockpit(assignedProcessDuplicate):
+            try container.encode(Kind.duplicateCockpit, forKey: .kind)
+            try container.encode(assignedProcessDuplicate, forKey: .assignedProcessDuplicate)
+        case let .pickupTimeout(taskID, taskTitle):
+            try container.encode(Kind.pickupTimeout, forKey: .kind)
+            try container.encode(taskID, forKey: .taskID)
+            try container.encode(taskTitle, forKey: .taskTitle)
+        case .launchFailed:
+            try container.encode(Kind.launchFailed, forKey: .kind)
+        case .wakeFailed:
+            try container.encode(Kind.wakeFailed, forKey: .kind)
+        case .deliveryFailure:
+            try container.encode(Kind.deliveryFailure, forKey: .kind)
+        case .needsReconnect:
+            try container.encode(Kind.needsReconnect, forKey: .kind)
+        }
+    }
 }
 
 struct WorkBatchTaskRecord: Codable, Equatable, Identifiable {
@@ -89,12 +184,49 @@ struct WorkBatchRecord: Codable, Equatable, Identifiable {
     let id: String
     var name: String
     var projectPath: String
+    /// Structural status decided by the reducer (router + reconciler) from live
+    /// session facts. The projection re-derives the displayed status/summary
+    /// from this plus tasks/checkpoints/attentionReason in
+    /// `WorkBatchProjectionBuilder.deriveBatchPresentation`.
     var status: WorkBatchStatus
+    /// Recorded activity line: the last genuine, agent- or operation-authored
+    /// activity datum for the batch (a claim summary, a done-report summary, a
+    /// "Reopened …"/"Answered …"/"Starting …" line, a queued-Task line, or a
+    /// bespoke checkpoint line). It is no longer authored-then-sniffed for
+    /// attention prose — attention states live in `attentionReason`. The
+    /// projection treats it as one input fact among several.
     var currentActivitySummary: String
     var taskIDs: [String]
     var cockpitBindingID: String?
+    /// Typed attention state; defaults to `.none`. Persisted; old files without
+    /// the key decode to `.none`.
+    var attentionReason: WorkBatchAttentionReason
     let createdAt: Date
     var updatedAt: Date
+
+    init(
+        id: String,
+        name: String,
+        projectPath: String,
+        status: WorkBatchStatus,
+        currentActivitySummary: String,
+        taskIDs: [String],
+        cockpitBindingID: String?,
+        attentionReason: WorkBatchAttentionReason = .none,
+        createdAt: Date,
+        updatedAt: Date,
+    ) {
+        self.id = id
+        self.name = name
+        self.projectPath = projectPath
+        self.status = status
+        self.currentActivitySummary = currentActivitySummary
+        self.taskIDs = taskIDs
+        self.cockpitBindingID = cockpitBindingID
+        self.attentionReason = attentionReason
+        self.createdAt = createdAt
+        self.updatedAt = updatedAt
+    }
 
     enum CodingKeys: String, CodingKey {
         case id
@@ -104,8 +236,26 @@ struct WorkBatchRecord: Codable, Equatable, Identifiable {
         case currentActivitySummary = "current_activity_summary"
         case taskIDs = "task_ids"
         case cockpitBindingID = "cockpit_binding_id"
+        case attentionReason = "attention_reason"
         case createdAt = "created_at"
         case updatedAt = "updated_at"
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(String.self, forKey: .id)
+        name = try container.decode(String.self, forKey: .name)
+        projectPath = try container.decode(String.self, forKey: .projectPath)
+        status = try container.decode(WorkBatchStatus.self, forKey: .status)
+        currentActivitySummary = try container.decode(String.self, forKey: .currentActivitySummary)
+        taskIDs = try container.decode([String].self, forKey: .taskIDs)
+        cockpitBindingID = try container.decodeIfPresent(String.self, forKey: .cockpitBindingID)
+        // Migration: batches written before the T2 teardown have no
+        // `attention_reason` key; decode them to the steady state.
+        attentionReason = try container
+            .decodeIfPresent(WorkBatchAttentionReason.self, forKey: .attentionReason) ?? .none
+        createdAt = try container.decode(Date.self, forKey: .createdAt)
+        updatedAt = try container.decode(Date.self, forKey: .updatedAt)
     }
 }
 
@@ -635,18 +785,136 @@ enum WorkBatchProjectionBuilder {
                     }
                 let sortedTasks = tasks.sorted { $0.createdAt < $1.createdAt }
                 let binding = bindingsByBatch[batch.id]
+                let presentation = deriveBatchPresentation(
+                    batch: batch,
+                    tasks: sortedTasks,
+                    checkpoints: checkpoints,
+                )
                 return WorkBatchProjection(
                     id: batch.id,
                     name: batch.name,
-                    status: batch.status,
+                    status: presentation.status,
                     queuedTaskCount: tasks.count(where: { $0.status == .queued }),
-                    currentActivitySummary: displaySummary(for: batch, tasks: sortedTasks),
+                    currentActivitySummary: presentation.summary,
                     tasks: sortedTasks,
                     checkpoints: checkpoints,
                     binding: binding,
                     preview: previewProjector?(batch, binding, previewsByBatch[batch.id]),
                 )
             }
+    }
+
+    struct BatchPresentation: Equatable {
+        let status: WorkBatchStatus
+        let summary: String
+    }
+
+    /// Pure, total derivation of the `(status, summary)` the home UI consumes
+    /// for one Work Batch.
+    ///
+    /// This is the single source of truth for Work Batch presentation. It reads
+    /// only structural facts the reducer owns — the stored structural `status`,
+    /// the per-Task statuses, whether a checkpoint is pending, the typed
+    /// `attentionReason`, and the recorded activity line — and never inspects
+    /// live prose to decide what to show. Every branch returns a concrete value,
+    /// so it cannot flap or leave the summary undefined.
+    ///
+    /// Precedence (highest first):
+    ///   1. A pending checkpoint always speaks for the batch (a queued
+    ///      operator decision must stay visible even alongside duplicate
+    ///      cockpits or delivery faults).
+    ///   2. A typed `attentionReason` maps to its exact attention string.
+    ///   3. The working-branch fact derivation (queued/working/all-done).
+    ///   4. The recorded activity line, recomputed from facts where it is a
+    ///      placeholder/generic and passed through where it is genuine.
+    static func deriveBatchPresentation(
+        batch: WorkBatchRecord,
+        tasks: [WorkBatchTaskRecord],
+        checkpoints: [WorkBatchCheckpointRecord],
+    ) -> BatchPresentation {
+        let status = batch.status
+
+        // 1. Pending checkpoint wins: surface the bespoke "Checkpoint ready: …"
+        //    recomputed from the checkpoint question, falling back to the
+        //    generic line when no question is available.
+        if let pendingCheckpoint = checkpoints.first(where: { $0.isPending }) {
+            return BatchPresentation(
+                status: status,
+                summary: checkpointReadySummary(for: pendingCheckpoint, recordedLine: batch.currentActivitySummary),
+            )
+        }
+
+        // 2. Typed attention state maps to its exact string.
+        switch batch.attentionReason {
+        case .none:
+            break
+        case let .duplicateCockpit(assignedProcessDuplicate):
+            return BatchPresentation(
+                status: status,
+                summary: assignedProcessDuplicate
+                    ? "Claude Code is already open; click to re-enter."
+                    : "Multiple Claude Code sessions match this Work Batch.",
+            )
+        case let .pickupTimeout(_, taskTitle):
+            let title = taskTitle.trimmingCharacters(in: .whitespacesAndNewlines)
+            let named = title.isEmpty ? "the queued Task" : title
+            return BatchPresentation(
+                status: status,
+                summary: "Claude Code has not picked up \(named) yet. Click to re-enter.",
+            )
+        case .launchFailed:
+            return BatchPresentation(status: status, summary: "Claude Code launch needs attention.")
+        case .wakeFailed:
+            return BatchPresentation(status: status, summary: "Claude Code wake needs attention.")
+        case .deliveryFailure:
+            return BatchPresentation(status: status, summary: "Claude Code delivery needs attention.")
+        case .needsReconnect:
+            return BatchPresentation(status: status, summary: "Claude Code session needs reconnect.")
+        }
+
+        // 3 + 4. Fact-derived summary for the steady state.
+        return BatchPresentation(status: status, summary: displaySummary(for: batch, tasks: tasks))
+    }
+
+    private static func checkpointReadySummary(
+        for checkpoint: WorkBatchCheckpointRecord,
+        recordedLine: String,
+    ) -> String {
+        // The bespoke "Checkpoint ready: <question>" line is the genuine
+        // checkpoint-creation activity datum; it is recomputed from the
+        // question so it stays in sync. The recorded line is the discriminator:
+        //   1. if the recorded line already is the matching bespoke sentence
+        //      (checkpoint-creation path), surface it verbatim;
+        //   2. else, reproduce 3a's `markWaitingForUser`: only substitute the
+        //      generic operator prompt when the recorded line matched
+        //      `shouldReplaceSummaryForUserInput` (empty/working/reconnecting/
+        //      reconnect/attention/multiple). A genuine non-matching line (e.g.
+        //      "Answered checkpoint for X. Claude Code will continue." or a
+        //      stale bespoke "Checkpoint ready: OLD-Q") was preserved in 3a, so
+        //      it passes through here unchanged.
+        let recomputed = "Checkpoint ready: \(WorkBatchSummaryText.questionSentence(checkpoint.question))"
+        let trimmedRecorded = recordedLine.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmedRecorded == recomputed {
+            return recomputed
+        }
+        if shouldReplaceSummaryForUserInput(trimmedRecorded) {
+            return "Checkpoint needs your input."
+        }
+        return trimmedRecorded
+    }
+
+    /// 3a `WorkBatchBindingReconciler.shouldReplaceSummaryForUserInput`, verbatim.
+    /// Matches the recorded line (case-insensitive, trimmed) that
+    /// `markWaitingForUser` would have replaced with the generic checkpoint
+    /// prompt. Everything else was preserved.
+    private static func shouldReplaceSummaryForUserInput(_ summary: String) -> Bool {
+        let normalized = summary.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        return normalized.isEmpty ||
+            normalized.contains("is working") ||
+            normalized.contains("is reconnecting") ||
+            normalized.contains("needs reconnect") ||
+            normalized.contains("needs attention") ||
+            normalized.contains("multiple claude code sessions")
     }
 
     private static func displayPriority(
@@ -694,9 +962,45 @@ enum WorkBatchProjectionBuilder {
             {
                 return "Checking final result."
             }
+
+            // Reproduce 3a's `markRunningIfUseful` + `runningSummary`: a single
+            // working Task with no queued Task and no all-done short-circuit got
+            // "Working on <title>." whenever the recorded line was empty or
+            // matched the recovery replace set (the 3a
+            // `shouldReplaceSummaryAfterRecovery` predicate — note it tests
+            // "is working in", not "is working"). A genuine bespoke recorded line
+            // for a single working Task (e.g. a fresh "Claude Code is starting on
+            // X." launch line) was preserved in 3a and must still pass through to
+            // the recorded-line logic below.
+            if workingTasks.count == 1,
+               queuedTasks.isEmpty,
+               let workingTask = workingTasks.first
+            {
+                let recorded = batch.currentActivitySummary
+                    .trimmingCharacters(in: .whitespacesAndNewlines)
+                if shouldReplaceSummaryAfterRecovery(recorded) {
+                    return "Working on \(workingTask.displayTitle)."
+                }
+            }
         }
 
         let summary = batch.currentActivitySummary.trimmingCharacters(in: .whitespacesAndNewlines)
+        // Completed/done batch: reproduce 3a's `markDoneIfUseful`, which replaced
+        // the recorded line with the Done completion line whenever
+        // `shouldReplaceSummaryAfterCompletion` matched (empty, the two
+        // generic-done strings, OR a recorded line containing "is working" /
+        // "needs reconnect" / "needs attention" / "multiple claude code
+        // sessions"). A genuine, non-matching recorded line — including the
+        // stale "Working on …" wart, which the 3a predicate did NOT match
+        // because it tests "is working", not "working" — is preserved verbatim
+        // by the passthrough below.
+        if isCompletedBatch(batch: batch, tasks: tasks),
+           shouldReplaceSummaryAfterCompletion(summary)
+        {
+            return completionSummary(for: tasks)
+        }
+        // A generic-done placeholder on a non-completed batch is still cleaned
+        // up to the fact-derived completion line, matching 3a `displaySummary`.
         if isGenericDoneSummary(summary) {
             return completionSummary(for: tasks)
         }
@@ -719,6 +1023,18 @@ enum WorkBatchProjectionBuilder {
         return taskTitle
     }
 
+    private static func isCompletedBatch(
+        batch: WorkBatchRecord,
+        tasks: [WorkBatchTaskRecord],
+    ) -> Bool {
+        switch batch.status {
+        case .ready, .idle:
+            !tasks.isEmpty && tasks.allSatisfy { $0.status == .done }
+        case .working, .waiting, .compacting:
+            false
+        }
+    }
+
     private static func isGenericDoneSummary(_ summary: String) -> Bool {
         switch summary.lowercased() {
         case "done: all tasks completed.", "all tasks done.":
@@ -726,6 +1042,37 @@ enum WorkBatchProjectionBuilder {
         default:
             false
         }
+    }
+
+    /// 3a `WorkBatchBindingReconciler.shouldReplaceSummaryAfterCompletion`,
+    /// verbatim. Matches the recorded line (case-insensitive, trimmed) that
+    /// `markDoneIfUseful` would have replaced with the Done completion line.
+    /// Note: it tests `contains("is working")`, NOT `contains("working")`, so a
+    /// recorded "Working on <title>." does not match and survives unchanged.
+    private static func shouldReplaceSummaryAfterCompletion(_ summary: String) -> Bool {
+        let normalized = summary.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        return normalized.isEmpty ||
+            normalized == "done: all tasks completed." ||
+            normalized == "all tasks done." ||
+            normalized.contains("is working") ||
+            normalized.contains("needs reconnect") ||
+            normalized.contains("needs attention") ||
+            normalized.contains("multiple claude code sessions")
+    }
+
+    /// 3a `WorkBatchBindingReconciler.shouldReplaceSummaryAfterRecovery`,
+    /// verbatim. Matches the recorded line (case-insensitive, trimmed) that
+    /// `markRunningIfUseful` would have replaced with the running summary
+    /// ("Working on <title>."). Note: it tests `contains("is working in")`, NOT
+    /// `contains("is working")`/`contains("working")`, so a bespoke launch line
+    /// ("Claude Code is starting on X.") and a stale "Working on X." both survive.
+    private static func shouldReplaceSummaryAfterRecovery(_ summary: String) -> Bool {
+        let normalized = summary.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        return normalized.isEmpty ||
+            normalized.contains("is working in") ||
+            normalized.contains("needs reconnect") ||
+            normalized.contains("needs attention") ||
+            normalized.contains("multiple claude code sessions")
     }
 
     private static func completionSummary(for tasks: [WorkBatchTaskRecord]) -> String {
@@ -742,10 +1089,33 @@ enum WorkBatchProjectionBuilder {
         guard let completedTask else {
             return "Done."
         }
-        return doneSummary(taskTitle: completedTask.displayTitle)
+        return WorkBatchSummaryText.doneSummary(taskTitle: completedTask.displayTitle)
+    }
+}
+
+/// Single source of truth for the two pure summary-text helpers that the
+/// author side (`WorkBatchAutoRouter`) and the derive side
+/// (`WorkBatchProjectionBuilder`) both depend on. The checkpoint discriminator
+/// in `deriveBatchPresentation` compares its recomputed
+/// "Checkpoint ready: <questionSentence>" against the author-recorded line, so
+/// the two sides MUST format the question identically; hoisting both functions
+/// here removes the silent drift risk that two byte-identical copies created.
+enum WorkBatchSummaryText {
+    /// Normalizes a checkpoint question into a single sentence ending in
+    /// terminal punctuation (defaulting to "?").
+    static func questionSentence(_ rawQuestion: String) -> String {
+        let trimmed = rawQuestion.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return "User input needed." }
+        if let last = trimmed.last,
+           [".", "!", "?"].contains(last)
+        {
+            return trimmed
+        }
+        return "\(trimmed)?"
     }
 
-    private static func doneSummary(taskTitle: String) -> String {
+    /// Formats a completed Task title into the "Done: <title>." line.
+    static func doneSummary(taskTitle: String) -> String {
         let title = taskTitle.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !title.isEmpty else { return "Done." }
         if let last = title.last,

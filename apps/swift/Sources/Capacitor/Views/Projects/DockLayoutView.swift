@@ -20,9 +20,8 @@ struct DockLayoutView: View {
     }
 
     var body: some View {
-        // Bridge nested session-state updates into this view's observation graph.
-        let _ = appState.sessionStateRevision
-        // Snapshot session state directly so this body observes per-project changes.
+        // Snapshot session state directly so this body observes per-project
+        // changes via @Observable tracking of SessionStateManager.sessionStates.
         let sessionStates = appState.sessionStateManager.sessionStates
 
         // Capture layout values once at body evaluation to avoid constraint loops
@@ -244,20 +243,7 @@ struct DockLayoutView: View {
         }
 
         private static func stateLabel(_ state: SessionState?) -> String {
-            guard let state else { return "nil" }
-
-            switch state {
-            case .working:
-                return "Working"
-            case .ready:
-                return "Ready"
-            case .idle:
-                return "Idle"
-            case .compacting:
-                return "Compacting"
-            case .waiting:
-                return "Waiting"
-            }
+            state?.presentation.telemetryLabel ?? "nil"
         }
     }
 #endif

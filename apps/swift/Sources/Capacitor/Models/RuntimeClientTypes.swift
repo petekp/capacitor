@@ -140,10 +140,10 @@ struct RuntimeRoutingRollout: Decodable {
     }
 }
 
-struct RuntimeSession: Decodable {
+struct RuntimeSession {
     let sessionId: String
     let pid: UInt32
-    let state: String
+    let state: SessionState
     let cwd: String
     let projectId: String?
     let workspaceId: String?
@@ -157,25 +157,6 @@ struct RuntimeSession: Decodable {
     let lastAuthoritativeEventAt: String?
     let gcReason: String?
     let isAlive: Bool?
-
-    enum CodingKeys: String, CodingKey {
-        case sessionId = "session_id"
-        case pid
-        case state
-        case cwd
-        case projectId = "project_id"
-        case workspaceId = "workspace_id"
-        case projectPath = "project_path"
-        case updatedAt = "updated_at"
-        case stateChangedAt = "state_changed_at"
-        case lastEvent = "last_event"
-        case lastActivityAt = "last_activity_at"
-        case toolsInFlight = "tools_in_flight"
-        case stateSource = "state_source"
-        case lastAuthoritativeEventAt = "last_authoritative_event_at"
-        case gcReason = "gc_reason"
-        case isAlive = "is_alive"
-    }
 }
 
 struct RuntimeStateSource: Decodable {
@@ -190,11 +171,11 @@ struct RuntimeStateSource: Decodable {
     }
 }
 
-struct RuntimeProjectState: Decodable {
+struct RuntimeProjectState {
     let projectId: String?
     let workspaceId: String?
     let projectPath: String
-    let state: String
+    let state: SessionState
     let updatedAt: String
     let stateChangedAt: String
     let sessionId: String?
@@ -202,20 +183,6 @@ struct RuntimeProjectState: Decodable {
     let sessionCount: Int
     let activeCount: Int
     let hasSession: Bool
-
-    enum CodingKeys: String, CodingKey {
-        case projectId = "project_id"
-        case workspaceId = "workspace_id"
-        case projectPath = "project_path"
-        case state
-        case updatedAt = "updated_at"
-        case stateChangedAt = "state_changed_at"
-        case sessionId = "session_id"
-        case latestSessionId = "latest_session_id"
-        case sessionCount = "session_count"
-        case activeCount = "active_count"
-        case hasSession = "has_session"
-    }
 }
 
 struct RuntimeSnapshot {
@@ -225,7 +192,7 @@ struct RuntimeSnapshot {
     let routingViews: [RuntimeRoutingView]
     let delegations: [RuntimeDelegationState]
     let runs: [RuntimeRunState]
-    let snapshotVersion: UInt64
+    let changeVersion: UInt64
 }
 
 /// Response from the long-poll snapshot endpoint.
@@ -233,7 +200,7 @@ enum LongPollResponse {
     /// Snapshot changed and includes a full runtime snapshot payload.
     case changed(RuntimeSnapshot)
     /// Snapshot did not change before the server-side timeout elapsed.
-    case unchanged(snapshotVersion: UInt64)
+    case unchanged(changeVersion: UInt64)
     /// The runtime service does not expose the long-poll endpoint yet.
     case unavailable
 }
@@ -252,32 +219,18 @@ struct RuntimeDelegationReview: Decodable, Equatable {
     }
 }
 
-struct RuntimeDelegationState: Decodable, Equatable {
+struct RuntimeDelegationState: Equatable {
     let projectPath: String
     let workerId: String
     let ideaId: String?
     let worktreeName: String
     let worktreePath: String
     let sessionId: String?
-    let status: String
+    let status: DelegationStatus
     let startedAt: String
     let updatedAt: String
     let submittedMilestoneId: String?
     let currentReview: RuntimeDelegationReview?
-
-    enum CodingKeys: String, CodingKey {
-        case projectPath = "project_path"
-        case workerId = "worker_id"
-        case ideaId = "idea_id"
-        case worktreeName = "worktree_name"
-        case worktreePath = "worktree_path"
-        case sessionId = "session_id"
-        case status
-        case startedAt = "started_at"
-        case updatedAt = "updated_at"
-        case submittedMilestoneId = "submitted_milestone_id"
-        case currentReview = "current_review"
-    }
 
     init(
         projectPath: String,
@@ -286,7 +239,7 @@ struct RuntimeDelegationState: Decodable, Equatable {
         worktreeName: String,
         worktreePath: String,
         sessionId: String?,
-        status: String,
+        status: DelegationStatus,
         startedAt: String,
         updatedAt: String,
         submittedMilestoneId: String? = nil,
@@ -490,20 +443,12 @@ struct RuntimeCheckpointState: Equatable {
     }
 }
 
-struct RuntimePhaseInstance: Equatable, Decodable {
+struct RuntimePhaseInstance: Equatable {
     let id: String
     let name: String
-    let status: String
+    let status: PhaseStatus
     let startedAt: String?
     let completedAt: String?
-
-    enum CodingKeys: String, CodingKey {
-        case id
-        case name
-        case status
-        case startedAt = "started_at"
-        case completedAt = "completed_at"
-    }
 }
 
 struct RuntimeRunState: Equatable {
@@ -511,7 +456,7 @@ struct RuntimeRunState: Equatable {
     let projectPath: String
     let methodId: String
     let methodName: String
-    let status: String
+    let status: RunStatus
     let sessionId: String?
     let delegationWorkerId: String?
     let statusMessage: String?
@@ -530,7 +475,7 @@ struct RuntimeRunState: Equatable {
         projectPath: String,
         methodId: String,
         methodName: String,
-        status: String,
+        status: RunStatus,
         sessionId: String?,
         delegationWorkerId: String?,
         statusMessage: String?,
@@ -605,7 +550,7 @@ struct CoreRoutingSnapshot: Equatable {
     let version: Int
     let workspaceId: String
     let projectPath: String
-    let status: String
+    let status: RoutingStatus
     let target: CoreRoutingTarget
     let confidence: String
     let reasonCode: String
@@ -752,6 +697,253 @@ struct RuntimeRunMutationRequest: Encodable, Equatable {
         case ideaId = "idea_id"
         case ideaTitle = "idea_title"
         case ideaDescription = "idea_description"
+    }
+}
+
+// MARK: - Per-kind factories
+
+/// Each `RunMutationKind` only reads a handful of fields; the rest are nil/[]
+/// padding on the wire. These static factories let call sites pass only the
+/// fields their kind actually uses and fill every irrelevant field internally.
+/// The produced request is byte-identical to the equivalent full memberwise
+/// initializer (same `kind` string, same field values, same nils/empty arrays).
+extension RuntimeRunMutationRequest {
+    /// `create` — start a new method run from an idea.
+    static func create(
+        projectPath: String,
+        runId: String,
+        methodId: String?,
+        involvement: String? = nil,
+        ideaId: String?,
+        ideaTitle: String?,
+        ideaDescription: String?,
+    ) -> RuntimeRunMutationRequest {
+        RuntimeRunMutationRequest(
+            kind: "create",
+            projectPath: projectPath,
+            runId: runId,
+            checkpointId: nil,
+            methodId: methodId,
+            involvement: involvement,
+            checkpointKind: nil,
+            checkpointTitle: nil,
+            checkpointSummary: nil,
+            checkpointBriefPath: nil,
+            checkpointManifestPath: nil,
+            checkpointMediaArtifacts: [],
+            checkpointMermaidSources: [],
+            captureUrl: nil,
+            decisionAction: nil,
+            decisionNote: nil,
+            sessionId: nil,
+            delegationWorkerId: nil,
+            statusMessage: nil,
+            captureRequestId: nil,
+            clientId: nil,
+            observedCaptureUrl: nil,
+            captureFailureReason: nil,
+            completedMediaArtifacts: [],
+            ideaId: ideaId,
+            ideaTitle: ideaTitle,
+            ideaDescription: ideaDescription,
+        )
+    }
+
+    /// `submit_decision` — record a reviewer decision on a checkpoint.
+    static func submitDecision(
+        projectPath: String,
+        runId: String,
+        checkpointId: String?,
+        decisionAction: String?,
+        decisionNote: String?,
+    ) -> RuntimeRunMutationRequest {
+        RuntimeRunMutationRequest(
+            kind: "submit_decision",
+            projectPath: projectPath,
+            runId: runId,
+            checkpointId: checkpointId,
+            methodId: nil,
+            involvement: nil,
+            checkpointKind: nil,
+            checkpointTitle: nil,
+            checkpointSummary: nil,
+            checkpointBriefPath: nil,
+            checkpointManifestPath: nil,
+            checkpointMediaArtifacts: [],
+            checkpointMermaidSources: [],
+            captureUrl: nil,
+            decisionAction: decisionAction,
+            decisionNote: decisionNote,
+            sessionId: nil,
+            delegationWorkerId: nil,
+            statusMessage: nil,
+            captureRequestId: nil,
+            clientId: nil,
+            observedCaptureUrl: nil,
+            captureFailureReason: nil,
+            completedMediaArtifacts: [],
+            ideaId: nil,
+            ideaTitle: nil,
+            ideaDescription: nil,
+        )
+    }
+
+    /// `capture_claim` — claim ownership of a pending capture request.
+    static func captureClaim(
+        projectPath: String,
+        runId: String,
+        checkpointId: String?,
+        captureRequestId: String?,
+        clientId: String?,
+        observedCaptureUrl: String?,
+    ) -> RuntimeRunMutationRequest {
+        RuntimeRunMutationRequest(
+            kind: "capture_claim",
+            projectPath: projectPath,
+            runId: runId,
+            checkpointId: checkpointId,
+            methodId: nil,
+            involvement: nil,
+            checkpointKind: nil,
+            checkpointTitle: nil,
+            checkpointSummary: nil,
+            checkpointBriefPath: nil,
+            checkpointManifestPath: nil,
+            checkpointMediaArtifacts: [],
+            checkpointMermaidSources: [],
+            captureUrl: nil,
+            decisionAction: nil,
+            decisionNote: nil,
+            sessionId: nil,
+            delegationWorkerId: nil,
+            statusMessage: nil,
+            captureRequestId: captureRequestId,
+            clientId: clientId,
+            observedCaptureUrl: observedCaptureUrl,
+            captureFailureReason: nil,
+            completedMediaArtifacts: [],
+            ideaId: nil,
+            ideaTitle: nil,
+            ideaDescription: nil,
+        )
+    }
+
+    /// `capture_failed` — report a failed capture attempt.
+    static func captureFailed(
+        projectPath: String,
+        runId: String,
+        checkpointId: String?,
+        captureRequestId: String?,
+        captureFailureReason: String?,
+    ) -> RuntimeRunMutationRequest {
+        RuntimeRunMutationRequest(
+            kind: "capture_failed",
+            projectPath: projectPath,
+            runId: runId,
+            checkpointId: checkpointId,
+            methodId: nil,
+            involvement: nil,
+            checkpointKind: nil,
+            checkpointTitle: nil,
+            checkpointSummary: nil,
+            checkpointBriefPath: nil,
+            checkpointManifestPath: nil,
+            checkpointMediaArtifacts: [],
+            checkpointMermaidSources: [],
+            captureUrl: nil,
+            decisionAction: nil,
+            decisionNote: nil,
+            sessionId: nil,
+            delegationWorkerId: nil,
+            statusMessage: nil,
+            captureRequestId: captureRequestId,
+            clientId: nil,
+            observedCaptureUrl: nil,
+            captureFailureReason: captureFailureReason,
+            completedMediaArtifacts: [],
+            ideaId: nil,
+            ideaTitle: nil,
+            ideaDescription: nil,
+        )
+    }
+
+    /// `capture_complete` — finalize a capture with its media artifacts.
+    static func captureComplete(
+        projectPath: String,
+        runId: String,
+        checkpointId: String?,
+        captureRequestId: String?,
+        completedMediaArtifacts: [RuntimeMediaArtifact],
+    ) -> RuntimeRunMutationRequest {
+        RuntimeRunMutationRequest(
+            kind: "capture_complete",
+            projectPath: projectPath,
+            runId: runId,
+            checkpointId: checkpointId,
+            methodId: nil,
+            involvement: nil,
+            checkpointKind: nil,
+            checkpointTitle: nil,
+            checkpointSummary: nil,
+            checkpointBriefPath: nil,
+            checkpointManifestPath: nil,
+            checkpointMediaArtifacts: [],
+            checkpointMermaidSources: [],
+            captureUrl: nil,
+            decisionAction: nil,
+            decisionNote: nil,
+            sessionId: nil,
+            delegationWorkerId: nil,
+            statusMessage: nil,
+            captureRequestId: captureRequestId,
+            clientId: nil,
+            observedCaptureUrl: nil,
+            captureFailureReason: nil,
+            completedMediaArtifacts: completedMediaArtifacts,
+            ideaId: nil,
+            ideaTitle: nil,
+            ideaDescription: nil,
+        )
+    }
+
+    /// Status-family kinds (`start`/`heartbeat`/`pause`/`resume`/`complete`/`fail`/`cancel`)
+    /// that carry at most a free-form `statusMessage`. The caller passes the wire
+    /// `kind` string verbatim; all checkpoint/capture/idea fields are nil/[].
+    static func status(
+        kind: String,
+        projectPath: String,
+        runId: String,
+        statusMessage: String? = nil,
+    ) -> RuntimeRunMutationRequest {
+        RuntimeRunMutationRequest(
+            kind: kind,
+            projectPath: projectPath,
+            runId: runId,
+            checkpointId: nil,
+            methodId: nil,
+            involvement: nil,
+            checkpointKind: nil,
+            checkpointTitle: nil,
+            checkpointSummary: nil,
+            checkpointBriefPath: nil,
+            checkpointManifestPath: nil,
+            checkpointMediaArtifacts: [],
+            checkpointMermaidSources: [],
+            captureUrl: nil,
+            decisionAction: nil,
+            decisionNote: nil,
+            sessionId: nil,
+            delegationWorkerId: nil,
+            statusMessage: statusMessage,
+            captureRequestId: nil,
+            clientId: nil,
+            observedCaptureUrl: nil,
+            captureFailureReason: nil,
+            completedMediaArtifacts: [],
+            ideaId: nil,
+            ideaTitle: nil,
+            ideaDescription: nil,
+        )
     }
 }
 

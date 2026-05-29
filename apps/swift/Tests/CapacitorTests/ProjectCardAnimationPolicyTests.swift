@@ -379,7 +379,7 @@ final class ProjectCardAnimationPolicyTests: XCTestCase {
             worktreeName: "wt",
             worktreePath: "/tmp/wt",
             sessionId: nil,
-            status: status,
+            status: try! DelegationStatus.decode(wire: status),
             startedAt: "2025-01-01T00:00:00Z",
             updatedAt: "2025-01-01T00:00:00Z",
             submittedMilestoneId: nil,

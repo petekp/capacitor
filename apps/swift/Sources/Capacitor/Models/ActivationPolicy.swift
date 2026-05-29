@@ -94,7 +94,7 @@ struct ActivationPolicy {
     }
 
     private func routeRequiresRuntimeTerminalApp(route: RuntimeRoutingView?) -> Bool {
-        guard let route, route.status == "attached" else {
+        guard let route, route.status == .attached else {
             return false
         }
 

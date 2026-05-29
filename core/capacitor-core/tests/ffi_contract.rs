@@ -3,9 +3,8 @@ use std::fs;
 mod common;
 
 use capacitor_core::domain::{
-    HookEventType, IdeaMutationKind, IngestHookEventCommand, IngestShellSignalCommand,
-    MutateIdeaCommand, MutateProjectCommand, MutateWorktreeCommand, ProjectMutationKind,
-    ResolveRoutingCommand, RoutingStatus, RoutingTargetKind, TmuxPaneInfo, WorktreeMutationKind,
+    HookEventType, IngestHookEventCommand, IngestShellSignalCommand, MutateProjectCommand,
+    ProjectMutationKind, ResolveRoutingCommand, RoutingStatus, RoutingTargetKind, TmuxPaneInfo,
 };
 use capacitor_core::CoreRuntime;
 
@@ -522,44 +521,6 @@ fn ffi_mutate_project_validates_and_applies_add_rename_remove() {
         .all(|project| project.project_path != "/tmp/rewrite-contract"));
 }
 
-#[test]
-fn ffi_mutate_idea_and_worktree_update_command_envelope_contracts() {
-    let runtime = CoreRuntime::new().expect("runtime");
-
-    let idea = runtime
-        .mutate_idea(MutateIdeaCommand {
-            kind: IdeaMutationKind::Add,
-            project_path: "/tmp/rewrite-contract".to_string(),
-            idea_id: "idea-1".to_string(),
-            title: Some("Idea".to_string()),
-            description: Some("Description".to_string()),
-            status: Some("todo".to_string()),
-        })
-        .expect("idea mutation");
-    assert!(idea.ok);
-    assert!(idea.message.contains(
-        "idea mutation accepted kind=Add project_path=/tmp/rewrite-contract idea_id=idea-1"
-    ));
-
-    let worktree = runtime
-        .mutate_worktree(MutateWorktreeCommand {
-            kind: WorktreeMutationKind::Create,
-            repo_path: "/tmp/rewrite-contract".to_string(),
-            worktree_name: "feature-1".to_string(),
-            force: true,
-        })
-        .expect("worktree mutation");
-    assert!(worktree.ok);
-    assert!(
-        worktree.message.contains(
-            "worktree mutation accepted kind=Create repo_path=/tmp/rewrite-contract worktree_name=feature-1 force=true",
-        )
-    );
-
-    let snapshot = snapshot(&runtime);
-    assert_eq!(snapshot.diagnostics.events_ingested, 2);
-}
-
 fn fixture_snapshot_json() -> &'static str {
     r#"{
   "projects": [
@@ -634,7 +595,8 @@ fn fixture_snapshot_json() -> &'static str {
     "last_error": null
   },
   "generated_at": "2099-02-28T19:00:00Z",
-  "snapshot_version": 1,
+  "change_version": 0,
+  "disk_format_version": 1,
   "schema_version": 3
 }"#
 }

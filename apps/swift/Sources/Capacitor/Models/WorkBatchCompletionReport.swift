@@ -115,61 +115,40 @@ struct WorkBatchLoadedCompletionReport: Equatable {
     let url: URL
 }
 
+/// Thin wrapper over `JSONDirectoryStore`. Uncapped filename (fallback "task"), loads
+/// every report (no record filter). `deleteReport` stays a completion-specific
+/// capability — its canonical-remove + dedup-rescan is intentionally NOT pushed into
+/// the generic store.
 struct WorkBatchCompletionReportStore {
     static let relativeDirectory = ".capacitor/work-batch-completions"
 
-    private let worktreeURL: URL
     private let fileManager: FileManager
+    private let store: JSONDirectoryStore<WorkBatchCompletionReport>
 
     init(
         worktreePath: String,
         fileManager: FileManager = .default,
     ) {
-        worktreeURL = URL(fileURLWithPath: worktreePath, isDirectory: true)
         self.fileManager = fileManager
+        store = JSONDirectoryStore(
+            worktreePath: worktreePath,
+            fileManager: fileManager,
+            relativeDirectory: Self.relativeDirectory,
+            fileName: Self.reportFileName(taskID:),
+            loadPredicate: { _ in true },
+        )
     }
 
     func reportURL(taskID: String) -> URL {
-        directoryURL.appendingPathComponent(Self.reportFileName(taskID: taskID))
+        store.url(forID: taskID)
     }
 
     func loadReports() throws -> [WorkBatchLoadedCompletionReport] {
-        guard fileManager.fileExists(atPath: directoryURL.path) else { return [] }
-
-        let urls = try fileManager.contentsOfDirectory(
-            at: directoryURL,
-            includingPropertiesForKeys: nil,
-        )
-        let decoder = JSONDecoder()
-        decoder.dateDecodingStrategy = .capacitorISO8601
-
-        return urls
-            .filter { $0.pathExtension == "json" }
-            .compactMap { url in
-                guard let data = try? Data(contentsOf: url),
-                      let report = try? decoder.decode(WorkBatchCompletionReport.self, from: data)
-                else {
-                    return nil
-                }
-                return WorkBatchLoadedCompletionReport(report: report, url: url)
-            }
+        try store.load().map { WorkBatchLoadedCompletionReport(report: $0.record, url: $0.url) }
     }
 
     func write(_ report: WorkBatchCompletionReport) throws -> URL {
-        try? WorkBatchMetadataIgnoreInstaller.install(
-            in: worktreeURL.path,
-            fileManager: fileManager,
-        )
-        try fileManager.createDirectory(
-            at: directoryURL,
-            withIntermediateDirectories: true,
-        )
-        let url = reportURL(taskID: report.taskID)
-        let encoder = JSONEncoder()
-        encoder.dateEncodingStrategy = .iso8601
-        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
-        try encoder.encode(report).write(to: url, options: .atomic)
-        return url
+        try store.write(report, id: report.taskID)
     }
 
     func deleteReport(taskID: String) throws {
@@ -189,20 +168,6 @@ struct WorkBatchCompletionReportStore {
     }
 
     static func reportFileName(taskID: String) -> String {
-        let sanitized = taskID.lowercased().map { character -> Character in
-            if character.isLetter || character.isNumber || character == "-" || character == "_" {
-                return character
-            }
-            return "-"
-        }
-        let collapsed = String(sanitized)
-            .split(separator: "-", omittingEmptySubsequences: true)
-            .joined(separator: "-")
-        let basename = collapsed.isEmpty ? "task" : collapsed
-        return "\(basename).json"
-    }
-
-    private var directoryURL: URL {
-        worktreeURL.appendingPathComponent(Self.relativeDirectory, isDirectory: true)
+        "\(WorkBatchArtifactCodec.sanitizedIdentifier(taskID, fallback: "task", maxLength: nil)).json"
     }
 }

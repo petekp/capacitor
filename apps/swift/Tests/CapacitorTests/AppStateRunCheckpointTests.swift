@@ -255,7 +255,7 @@ final class AppStateRunCheckpointTests: XCTestCase {
                     projectId: nil,
                     workspaceId: nil,
                     projectPath: projectPath,
-                    state: "working",
+                    state: .working,
                     updatedAt: timestamp,
                     stateChangedAt: timestamp,
                     sessionId: "session-1",
@@ -270,7 +270,7 @@ final class AppStateRunCheckpointTests: XCTestCase {
             routingViews: [],
             delegations: [],
             runs: runs,
-            snapshotVersion: 0,
+            changeVersion: 0,
         )
     }
 
@@ -309,7 +309,7 @@ final class AppStateRunCheckpointTests: XCTestCase {
             projectPath: projectPath,
             methodId: "checkpoint-review",
             methodName: "Checkpoint Review",
-            status: status,
+            status: try! RunStatus.decode(wire: status),
             sessionId: "session-1",
             delegationWorkerId: nil,
             statusMessage: nil,

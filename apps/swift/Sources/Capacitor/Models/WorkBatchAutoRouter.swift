@@ -1,4 +1,5 @@
 import Foundation
+import Observation
 
 struct WorkBatchRouteResult: Equatable {
     let batch: WorkBatchRecord
@@ -97,6 +98,7 @@ enum WorkBatchAutoRouterError: Error, Equatable, LocalizedError {
     }
 }
 
+@Observable
 @MainActor
 final class WorkBatchAutoRouter {
     typealias Classifier = @Sendable (WorkBatchClassificationRequest) async throws -> WorkBatchClassificationRecord
@@ -110,22 +112,32 @@ final class WorkBatchAutoRouter {
     typealias PreviewRunningMatcher = (WorkBatchPreviewRecord) -> Bool
     typealias PreviewSourceSnapshotLoader = (String) async -> MacOSPreviewSourceSnapshot
 
-    private let classifier: Classifier
-    private let stateStoreFactory: StateStoreFactory
-    private let bindingStoreFactory: BindingStoreFactory
-    private let previewStoreFactory: PreviewStoreFactory
-    private let taskSessionCoordinator: WorkBatchTaskSessionCoordinator
-    private let processSessionIDs: ProcessSessionLookup
-    private let safeWakeBoundaryAllowsInputOverride: SafeWakeBoundaryLookup?
-    private let previewRunner: PreviewRunner
-    private let previewActivator: PreviewActivator
-    private let previewRunningMatcher: PreviewRunningMatcher
-    private let previewSourceSnapshotLoader: PreviewSourceSnapshotLoader
-    private let previewProjector: WorkBatchPreviewProjector
-    private var isRouting = false
-    private var routeWaiters: [CheckedContinuation<Void, Never>] = []
-    private var latestRuntimeSessions: [RuntimeSession] = []
-    private var hasRuntimeSessionSnapshot = false
+    @ObservationIgnored private let classifier: Classifier
+    @ObservationIgnored private let stateStoreFactory: StateStoreFactory
+    @ObservationIgnored private let bindingStoreFactory: BindingStoreFactory
+    @ObservationIgnored private let previewStoreFactory: PreviewStoreFactory
+    @ObservationIgnored private let taskSessionCoordinator: WorkBatchTaskSessionCoordinator
+    @ObservationIgnored private let processSessionIDs: ProcessSessionLookup
+    @ObservationIgnored private let safeWakeBoundaryAllowsInputOverride: SafeWakeBoundaryLookup?
+    @ObservationIgnored private let previewRunner: PreviewRunner
+    @ObservationIgnored private let previewActivator: PreviewActivator
+    @ObservationIgnored private let previewRunningMatcher: PreviewRunningMatcher
+    @ObservationIgnored private let previewSourceSnapshotLoader: PreviewSourceSnapshotLoader
+    @ObservationIgnored private let previewProjector: WorkBatchPreviewProjector
+    @ObservationIgnored private var isRouting = false
+    @ObservationIgnored private var routeWaiters: [CheckedContinuation<Void, Never>] = []
+    @ObservationIgnored private var latestRuntimeSessions: [RuntimeSession] = []
+    @ObservationIgnored private var hasRuntimeSessionSnapshot = false
+
+    /// Single in-memory working value per project. Disk (`WorkBatchStateStore`)
+    /// is a write-behind sink: this in-memory snapshot is the source of truth.
+    /// Lazy-hydrated from disk on first access per project; thereafter all ops
+    /// read and mutate this value, and a synchronous `save` mirrors it to disk.
+    @ObservationIgnored private var workingState: [String: WorkBatchStateSnapshot] = [:]
+
+    /// Published projections cache the @Observable view graph tracks. Recomputed
+    /// after every store-mutating op and seeded lazily on first read per project.
+    private(set) var projectionsByProjectPath: [String: [WorkBatchProjection]] = [:]
 
     init(
         classifier: Classifier? = nil,
@@ -180,6 +192,106 @@ final class WorkBatchAutoRouter {
         self.previewProjector = previewProjector
     }
 
+    // MARK: - In-memory working value (write-behind to disk)
+
+    /// Returns the in-memory working snapshot for `projectPath`, lazy-hydrating
+    /// from disk on a cache miss. After the first access all ops mutate this
+    /// in-memory value, so the snapshot — not disk — is the source of truth.
+    private func workingState(for projectPath: String) -> WorkBatchStateSnapshot {
+        if let existing = workingState[projectPath] {
+            return existing
+        }
+        let hydrated = (try? stateStoreFactory(projectPath).load()) ?? .empty
+        workingState[projectPath] = hydrated
+        return hydrated
+    }
+
+    /// Commits a mutated working snapshot: updates the single in-memory value,
+    /// refreshes the published projections cache, then mirrors to disk as a
+    /// write-behind sink. The in-memory value is authoritative; the save is the
+    /// durable mirror, not a re-read source.
+    private func commitWorkingState(_ snapshot: WorkBatchStateSnapshot, for projectPath: String) {
+        workingState[projectPath] = snapshot
+        recomputeProjections(for: projectPath)
+        do {
+            try stateStoreFactory(projectPath).save(snapshot)
+        } catch {
+            DebugLog.write(
+                "WorkBatchAutoRouter.commitWorkingState save failure project=\(projectPath) error=\(error.localizedDescription)",
+            )
+        }
+    }
+
+    /// Recomputes the published projections for `projectPath` from the in-memory
+    /// working value plus the on-disk binding/preview stores (the binding store
+    /// is the agent<->app worktree contract and stays on disk; the preview store
+    /// stays on disk too). Mutating this property drives @Observable re-render.
+    private func recomputeProjections(for projectPath: String) {
+        projectionsByProjectPath[projectPath] = computeProjections(for: projectPath)
+    }
+
+    /// Periodic-poll entry point that refreshes the published projections for
+    /// projects whose cached projection embeds LIVE preview state. The preview
+    /// piece of a projection is derived from `NSRunningApplication` (via
+    /// `WorkBatchPreviewProjector`), which can flip — e.g. the user quits the
+    /// preview app — without any store mutation. Store-mutating ops are the only
+    /// other thing that recomputes the cache, so without this the cache would
+    /// freeze a stale `.ready`/`.conflict` and the UI would show a stale
+    /// "Bring Preview Forward"/disabled button. The poll calls this on the same
+    /// cadence the old uncached projection enjoyed.
+    ///
+    /// Re-publishing is diff-gated: we only assign `projectionsByProjectPath`
+    /// when the freshly computed value differs from the cached one, so a steady
+    /// state (no preview change) does not thrash the @Observable view graph.
+    /// The recompute reads the in-memory working value (no disk reload of
+    /// state.json) plus the live preview query, so it is cheap.
+    func refreshPreviewSensitiveProjections(for projectPaths: [String]) {
+        for projectPath in projectPaths where hasPreviewCapableBatch(for: projectPath) {
+            recomputeProjectionsIfChanged(for: projectPath)
+        }
+    }
+
+    /// Recomputes projections and only re-publishes when the value actually
+    /// changed. Used by the poll tick to avoid needless render thrash.
+    private func recomputeProjectionsIfChanged(for projectPath: String) {
+        let computed = computeProjections(for: projectPath)
+        if projectionsByProjectPath[projectPath] != computed {
+            projectionsByProjectPath[projectPath] = computed
+        }
+    }
+
+    /// True when this project has at least one batch whose projection could
+    /// carry a live preview state worth re-polling. We gate on whether the
+    /// project is preview-capable at all (cheap filesystem check) so that
+    /// non-Capacitor projects never pay for the live `NSRunningApplication`
+    /// query on every tick.
+    private func hasPreviewCapableBatch(for projectPath: String) -> Bool {
+        guard previewProjector.isCapacitorPreviewBuildToolAvailable(projectPath: projectPath) else {
+            return false
+        }
+        let state = workingState(for: projectPath)
+        return !state.batches.isEmpty
+    }
+
+    private func computeProjections(for projectPath: String) -> [WorkBatchProjection] {
+        let state = workingState(for: projectPath)
+        let bindings = (try? bindingStoreFactory(projectPath).load()) ?? []
+        let previewRecords = (try? previewStoreFactory(projectPath).load()) ?? []
+        let previewProjector = previewProjector
+        return WorkBatchProjectionBuilder.build(
+            state: state,
+            bindings: bindings,
+            previewRecords: previewRecords,
+        ) { batch, binding, previewRecord in
+            previewProjector.projection(
+                projectPath: projectPath,
+                batch: batch,
+                binding: binding,
+                previewRecord: previewRecord,
+            )
+        }
+    }
+
     func routeCapturedTask(
         project: Project,
         idea: Idea,
@@ -210,23 +322,23 @@ final class WorkBatchAutoRouter {
             updatedAt: now,
         )
 
-        let stateStore = stateStoreFactory(project.path)
         let bindingStore = bindingStoreFactory(project.path)
-        var state = try stateStore.load()
         var bindings = try bindingStore.load()
         var reconciliationIssues: [WorkBatchBindingReconciliationIssue] = []
         if hasRuntimeSessionSnapshot {
             let result = try reconcileBindings(
-                stateStore: stateStore,
+                projectPath: project.path,
                 bindingStore: bindingStore,
                 sessions: latestRuntimeSessions,
                 now: now,
             )
-            state = result.state
             bindings = result.bindings
             reconciliationIssues = result.issues
         }
-        let projections = WorkBatchProjectionBuilder.build(state: state, bindings: bindings)
+        let projections = WorkBatchProjectionBuilder.build(
+            state: workingState(for: project.path),
+            bindings: bindings,
+        )
 
         let classificationRequest = WorkBatchClassificationRequest(
             projectName: project.name,
@@ -248,18 +360,30 @@ final class WorkBatchAutoRouter {
             )
         }
 
-        state = try stateStore.load()
-        bindings = try bindingStore.load()
+        // No defensive disk re-load here: the single @MainActor in-memory
+        // working value is the source of truth. Any concurrent ingest that ran
+        // during the classifier await mutated that same value (and the
+        // single-flight route turn serializes routes), so reading it back picks
+        // up those changes without a disk round-trip that could stomp them.
+        var state = workingState(for: project.path)
+
+        // Re-run reconciliation after the (possibly slow) classifier await. A
+        // session can die or change identity while the classifier shells out,
+        // which would make the pre-await `reconciliationIssues` captured above
+        // stale by the time `applyDeliveryPolicy` consumes them. This re-derives
+        // bindings/reconciliation against the CURRENT in-memory working value +
+        // current session set — no disk reload of state.json. We keep the
+        // pre-await reconcile too (it feeds the classification `projections`).
         if hasRuntimeSessionSnapshot {
-            let result = try reconcileBindings(
-                stateStore: stateStore,
+            let postAwaitResult = try reconcileBindings(
+                projectPath: project.path,
                 bindingStore: bindingStore,
                 sessions: latestRuntimeSessions,
                 now: now,
             )
-            state = result.state
-            bindings = result.bindings
-            reconciliationIssues = result.issues
+            bindings = postAwaitResult.bindings
+            reconciliationIssues = postAwaitResult.issues
+            state = workingState(for: project.path)
         }
 
         let activeProjections = WorkBatchProjectionBuilder.build(state: state, bindings: bindings)
@@ -277,7 +401,7 @@ final class WorkBatchAutoRouter {
             state: &state,
             now: now,
         )
-        try stateStore.save(state)
+        commitWorkingState(state, for: project.path)
 
         let updatedBatchTasks = state.tasks
             .filter { $0.batchID == route.batch.id }
@@ -299,10 +423,10 @@ final class WorkBatchAutoRouter {
                     deliveryGeneration: mirrorResult.deliveryGeneration,
                     actionableContextDigest: mirrorResult.actionableContextDigest,
                 )
-                try stateStore.save(state)
+                commitWorkingState(state, for: project.path)
             } catch {
                 try markLaunchFailed(
-                    stateStore: stateStore,
+                    projectPath: project.path,
                     batchID: route.batch.id,
                     taskID: route.task.id,
                     now: now,
@@ -310,7 +434,7 @@ final class WorkBatchAutoRouter {
                 throw error
             }
             existingBinding = try await applyDeliveryPolicy(
-                stateStore: stateStore,
+                projectPath: project.path,
                 bindingStore: bindingStore,
                 batchID: route.batch.id,
                 preferredTaskID: route.task.id,
@@ -342,7 +466,7 @@ final class WorkBatchAutoRouter {
             )
         } catch {
             try markLaunchFailed(
-                stateStore: stateStore,
+                projectPath: project.path,
                 batchID: route.batch.id,
                 taskID: route.task.id,
                 now: now,
@@ -350,11 +474,12 @@ final class WorkBatchAutoRouter {
             throw error
         }
 
-        var stateAfterLaunch = try stateStore.load()
+        var stateAfterLaunch = workingState(for: project.path)
         if let index = stateAfterLaunch.batches.firstIndex(where: { $0.id == route.batch.id }) {
             stateAfterLaunch.batches[index].cockpitBindingID = startResult.binding.id
             stateAfterLaunch.batches[index].status = .working
             stateAfterLaunch.batches[index].currentActivitySummary = "Claude Code is starting on \(route.task.title)."
+            stateAfterLaunch.batches[index].attentionReason = .none
             stateAfterLaunch.batches[index].updatedAt = now
         }
         if let taskIndex = stateAfterLaunch.tasks.firstIndex(where: { $0.id == route.task.id }) {
@@ -367,7 +492,7 @@ final class WorkBatchAutoRouter {
             deliveryGeneration: Self.deliveryGeneration(batchID: route.batch.id, updatedAt: now),
             actionableContextDigest: startResult.actionableContextDigest,
         )
-        try stateStore.save(stateAfterLaunch)
+        commitWorkingState(stateAfterLaunch, for: project.path)
 
         let launchedBatch = stateAfterLaunch.batches.first(where: { $0.id == route.batch.id }) ?? route.batch
         let launchedTask = stateAfterLaunch.tasks.first(where: { $0.id == route.task.id }) ?? route.task
@@ -402,22 +527,20 @@ final class WorkBatchAutoRouter {
     }
 
     func projections(for projectPath: String) -> [WorkBatchProjection] {
-        let state = (try? stateStoreFactory(projectPath).load()) ?? .empty
-        let bindings = (try? bindingStoreFactory(projectPath).load()) ?? []
-        let previewRecords = (try? previewStoreFactory(projectPath).load()) ?? []
-        let previewProjector = previewProjector
-        return WorkBatchProjectionBuilder.build(
-            state: state,
-            bindings: bindings,
-            previewRecords: previewRecords,
-        ) { batch, binding, previewRecord in
-            previewProjector.projection(
-                projectPath: projectPath,
-                batch: batch,
-                binding: binding,
-                previewRecord: previewRecord,
-            )
+        if let cached = projectionsByProjectPath[projectPath] {
+            return cached
         }
+        // PURE read on a cache miss: compute and RETURN without assigning to the
+        // published cache. `projections(for:)` is called from view bodies
+        // (ProjectDetailView -> AppState.workBatches(for:)), and assigning an
+        // @Observable property during body evaluation trips the SwiftUI
+        // "Modifying state during view update is not allowed" contract. The
+        // cache is seeded only from non-body triggers — store-mutating ops
+        // (commitWorkingState / recomputeProjections) and the periodic poll-tick
+        // recompute (refreshPreviewSensitiveProjections). A cold-open miss here
+        // returns a freshly computed value (correct) without mutating observable
+        // state mid-render.
+        return computeProjections(for: projectPath)
     }
 
     func openPreview(
@@ -426,10 +549,18 @@ final class WorkBatchAutoRouter {
         now: Date = Date(),
         onRecordChanged: ((WorkBatchPreviewRecord) -> Void)? = nil,
     ) async throws -> WorkBatchPreviewRecord {
-        let stateStore = stateStoreFactory(project.path)
         let bindingStore = bindingStoreFactory(project.path)
         let previewStore = previewStoreFactory(project.path)
-        let state = try stateStore.load()
+        let state = workingState(for: project.path)
+
+        /// Preview record changes feed the published projections cache, so wrap
+        /// every upsert: persist to the preview store, recompute the @Observable
+        /// projections, then notify the caller (which drives toast state).
+        func publishPreview(_ record: WorkBatchPreviewRecord) throws {
+            try previewStore.upsert(record)
+            recomputeProjections(for: project.path)
+            onRecordChanged?(record)
+        }
 
         guard state.batches.contains(where: { $0.id == batchID }) else {
             throw WorkBatchAutoRouterError.batchNotFound
@@ -443,8 +574,7 @@ final class WorkBatchAutoRouter {
                 reason: "No batch worktree yet",
                 updatedAt: now,
             )
-            try previewStore.upsert(record)
-            onRecordChanged?(record)
+            try publishPreview(record)
             return record
         }
 
@@ -458,8 +588,7 @@ final class WorkBatchAutoRouter {
                 reason: "Preview is not available in this batch worktree",
                 updatedAt: now,
             )
-            try previewStore.upsert(record)
-            onRecordChanged?(record)
+            try publishPreview(record)
             return record
         }
 
@@ -487,8 +616,7 @@ final class WorkBatchAutoRouter {
             updatedAt: now,
             sourceFingerprint: currentSourceSnapshot.fingerprint,
         )
-        try previewStore.upsert(building)
-        onRecordChanged?(building)
+        try publishPreview(building)
 
         let proof: MacOSPreviewWorkProof
         do {
@@ -510,8 +638,7 @@ final class WorkBatchAutoRouter {
                 updatedAt: now,
                 sourceFingerprint: currentSourceSnapshot.fingerprint,
             )
-            try previewStore.upsert(failed)
-            onRecordChanged?(failed)
+            try publishPreview(failed)
             return failed
         }
 
@@ -522,8 +649,7 @@ final class WorkBatchAutoRouter {
             proofPath: request.proofURL.path,
             updatedAt: now,
         )
-        try previewStore.upsert(record)
-        onRecordChanged?(record)
+        try publishPreview(record)
         return record
     }
 
@@ -535,14 +661,13 @@ final class WorkBatchAutoRouter {
         await acquireRouteTurn()
         defer { releaseRouteTurn() }
 
-        let stateStore = stateStoreFactory(project.path)
         let bindingStore = bindingStoreFactory(project.path)
 
         if let existingBinding = try bindingStore.binding(batchID: batchID) {
             return existingBinding
         }
 
-        let state = try stateStore.load()
+        let state = workingState(for: project.path)
         guard let batch = state.batches.first(where: { $0.id == batchID }) else {
             throw WorkBatchAutoRouterError.batchNotFound
         }
@@ -569,7 +694,7 @@ final class WorkBatchAutoRouter {
             )
         } catch {
             try markLaunchFailed(
-                stateStore: stateStore,
+                projectPath: project.path,
                 batchID: batch.id,
                 taskID: openTasks[0].id,
                 now: now,
@@ -577,11 +702,12 @@ final class WorkBatchAutoRouter {
             throw error
         }
 
-        var stateAfterLaunch = try stateStore.load()
+        var stateAfterLaunch = workingState(for: project.path)
         if let batchIndex = stateAfterLaunch.batches.firstIndex(where: { $0.id == batch.id }) {
             stateAfterLaunch.batches[batchIndex].cockpitBindingID = startResult.binding.id
             stateAfterLaunch.batches[batchIndex].status = .working
             stateAfterLaunch.batches[batchIndex].currentActivitySummary = "Claude Code is starting on \(openTasks.first?.displayTitle ?? batch.name)."
+            stateAfterLaunch.batches[batchIndex].attentionReason = .none
             stateAfterLaunch.batches[batchIndex].updatedAt = now
         }
         for taskIndex in stateAfterLaunch.tasks.indices where stateAfterLaunch.tasks[taskIndex].batchID == batch.id && stateAfterLaunch.tasks[taskIndex].status == .queued {
@@ -594,7 +720,7 @@ final class WorkBatchAutoRouter {
             deliveryGeneration: deliveryGeneration,
             actionableContextDigest: startResult.actionableContextDigest,
         )
-        try stateStore.save(stateAfterLaunch)
+        commitWorkingState(stateAfterLaunch, for: project.path)
 
         return startResult.binding
     }
@@ -677,9 +803,8 @@ final class WorkBatchAutoRouter {
         taskID: String,
         now: Date = Date(),
     ) throws -> WorkBatchUnresolveResult {
-        let stateStore = stateStoreFactory(project.path)
         let bindingStore = bindingStoreFactory(project.path)
-        var state = try stateStore.load()
+        var state = workingState(for: project.path)
         var bindings = try bindingStore.load()
 
         guard let batchIndex = state.batches.firstIndex(where: { $0.id == batchID }) else {
@@ -701,6 +826,7 @@ final class WorkBatchAutoRouter {
         let task = state.tasks[taskIndex]
         state.batches[batchIndex].status = .waiting
         state.batches[batchIndex].currentActivitySummary = "Reopened \(task.displayTitle). Claude Code will pick it back up."
+        state.batches[batchIndex].attentionReason = .none
         state.batches[batchIndex].updatedAt = now
 
         if let bindingIndex {
@@ -713,8 +839,9 @@ final class WorkBatchAutoRouter {
             }
         }
 
-        try stateStore.save(state)
+        commitWorkingState(state, for: project.path)
         try bindingStore.save(bindings)
+        recomputeProjections(for: project.path)
 
         let batch = state.batches[batchIndex]
         let batchTasks = state.tasks
@@ -736,7 +863,7 @@ final class WorkBatchAutoRouter {
                 deliveryGeneration: mirrorResult.deliveryGeneration,
                 actionableContextDigest: mirrorResult.actionableContextDigest,
             )
-            try stateStore.save(state)
+            commitWorkingState(state, for: project.path)
         }
 
         return WorkBatchUnresolveResult(
@@ -753,19 +880,18 @@ final class WorkBatchAutoRouter {
         preferredTaskID: String? = nil,
         now: Date = Date(),
     ) async throws -> WorkBatchCockpitBinding? {
-        let stateStore = stateStoreFactory(project.path)
         let bindingStore = bindingStoreFactory(project.path)
         var reconciliationIssues: [WorkBatchBindingReconciliationIssue] = []
         if hasRuntimeSessionSnapshot {
             reconciliationIssues = try reconcileBindings(
-                stateStore: stateStore,
+                projectPath: project.path,
                 bindingStore: bindingStore,
                 sessions: latestRuntimeSessions,
                 now: now,
             ).issues
         }
         return try await applyDeliveryPolicy(
-            stateStore: stateStore,
+            projectPath: project.path,
             bindingStore: bindingStore,
             batchID: batchID,
             preferredTaskID: preferredTaskID,
@@ -787,9 +913,8 @@ final class WorkBatchAutoRouter {
             throw WorkBatchAutoRouterError.emptyCheckpointResponse
         }
 
-        let stateStore = stateStoreFactory(project.path)
         let bindingStore = bindingStoreFactory(project.path)
-        var state = try stateStore.load()
+        var state = workingState(for: project.path)
         var bindings = try bindingStore.load()
 
         guard let checkpointIndex = state.checkpoints.firstIndex(where: {
@@ -838,7 +963,9 @@ final class WorkBatchAutoRouter {
             // already-completed Task should close the attention item, not imply
             // Claude Code has more work to continue.
             state.batches[batchIndex].status = .idle
-            state.batches[batchIndex].currentActivitySummary = doneSummary(taskTitle: task.displayTitle)
+            state.batches[batchIndex].currentActivitySummary = WorkBatchSummaryText
+                .doneSummary(taskTitle: task.displayTitle)
+            state.batches[batchIndex].attentionReason = .none
             state.batches[batchIndex].updatedAt = now
             if bindings[bindingIndex].status != .done {
                 bindings[bindingIndex].status = .done
@@ -847,6 +974,7 @@ final class WorkBatchAutoRouter {
         } else {
             state.batches[batchIndex].status = .waiting
             state.batches[batchIndex].currentActivitySummary = "Answered checkpoint for \(task.displayTitle). Claude Code will continue."
+            state.batches[batchIndex].attentionReason = .none
             state.batches[batchIndex].updatedAt = now
 
             switch bindings[bindingIndex].status {
@@ -858,8 +986,9 @@ final class WorkBatchAutoRouter {
             }
         }
 
-        try stateStore.save(state)
+        commitWorkingState(state, for: project.path)
         try bindingStore.save(bindings)
+        recomputeProjections(for: project.path)
 
         let batch = state.batches[batchIndex]
         let binding = bindings[bindingIndex]
@@ -877,7 +1006,7 @@ final class WorkBatchAutoRouter {
             deliveryGeneration: mirrorResult.deliveryGeneration,
             actionableContextDigest: mirrorResult.actionableContextDigest,
         )
-        try stateStore.save(state)
+        commitWorkingState(state, for: project.path)
 
         return WorkBatchCheckpointDecisionResult(
             batch: batch,
@@ -894,7 +1023,7 @@ final class WorkBatchAutoRouter {
         if hasRuntimeSessionSnapshot {
             let bindingStore = bindingStoreFactory(binding.projectPath)
             let result = try reconcileBindings(
-                stateStore: stateStoreFactory(binding.projectPath),
+                projectPath: binding.projectPath,
                 bindingStore: bindingStore,
                 sessions: latestRuntimeSessions,
                 now: Date(),
@@ -929,7 +1058,7 @@ final class WorkBatchAutoRouter {
         for project in projects {
             do {
                 let result = try reconcileBindings(
-                    stateStore: stateStoreFactory(project.path),
+                    projectPath: project.path,
                     bindingStore: bindingStoreFactory(project.path),
                     sessions: sessions,
                     now: now,
@@ -948,9 +1077,8 @@ final class WorkBatchAutoRouter {
         project: Project,
         now: Date,
     ) throws -> [WorkBatchTaskRequestIngestResult] {
-        let stateStore = stateStoreFactory(project.path)
         let bindingStore = bindingStoreFactory(project.path)
-        var state = try stateStore.load()
+        var state = workingState(for: project.path)
         var bindings = try bindingStore.load()
         guard !bindings.isEmpty else { return [] }
 
@@ -998,6 +1126,7 @@ final class WorkBatchAutoRouter {
                 }
                 state.batches[batchIndex].status = statusAfterQueuedTaskRequest(binding: binding)
                 state.batches[batchIndex].currentActivitySummary = "Queued \(task.displayTitle)."
+                state.batches[batchIndex].attentionReason = .none
                 state.batches[batchIndex].updatedAt = stateUpdateTime
                 state.classifications.append(WorkBatchClassificationRecord.existing(
                     taskID: taskID,
@@ -1026,10 +1155,11 @@ final class WorkBatchAutoRouter {
         }
 
         if state != originalState {
-            try stateStore.save(state)
+            commitWorkingState(state, for: project.path)
         }
         if bindings != originalBindings {
             try bindingStore.save(bindings)
+            recomputeProjections(for: project.path)
         }
 
         for batchID in batchesNeedingMirrorRewrite {
@@ -1060,7 +1190,7 @@ final class WorkBatchAutoRouter {
             }
         }
         if state != originalState {
-            try stateStore.save(state)
+            commitWorkingState(state, for: project.path)
         }
 
         return results
@@ -1070,9 +1200,8 @@ final class WorkBatchAutoRouter {
         project: Project,
         now: Date,
     ) throws -> [WorkBatchCompletionIngestResult] {
-        let stateStore = stateStoreFactory(project.path)
         let bindingStore = bindingStoreFactory(project.path)
-        var state = try stateStore.load()
+        var state = workingState(for: project.path)
         var bindings = try bindingStore.load()
         guard !bindings.isEmpty else { return [] }
 
@@ -1126,6 +1255,7 @@ final class WorkBatchAutoRouter {
                     )
                     state.batches[batchIndex].currentActivitySummary = "Done: \(summary) \(openTasks.count) Task\(openTasks.count == 1 ? "" : "s") still open."
                 }
+                state.batches[batchIndex].attentionReason = .none
                 state.batches[batchIndex].updatedAt = updateTime
                 batchesNeedingMirrorRewrite.insert(binding.batchID)
 
@@ -1143,10 +1273,11 @@ final class WorkBatchAutoRouter {
         }
 
         if state != originalState {
-            try stateStore.save(state)
+            commitWorkingState(state, for: project.path)
         }
         if bindings != originalBindings {
             try bindingStore.save(bindings)
+            recomputeProjections(for: project.path)
         }
 
         for batchID in batchesNeedingMirrorRewrite {
@@ -1180,7 +1311,7 @@ final class WorkBatchAutoRouter {
             }
         }
         if state != originalState {
-            try stateStore.save(state)
+            commitWorkingState(state, for: project.path)
         }
 
         return results
@@ -1190,9 +1321,8 @@ final class WorkBatchAutoRouter {
         project: Project,
         now _: Date,
     ) throws -> [WorkBatchTaskClaimIngestResult] {
-        let stateStore = stateStoreFactory(project.path)
         let bindingStore = bindingStoreFactory(project.path)
-        var state = try stateStore.load()
+        var state = workingState(for: project.path)
         let bindings = try bindingStore.load()
         guard !bindings.isEmpty else { return [] }
 
@@ -1239,6 +1369,7 @@ final class WorkBatchAutoRouter {
                     claimSummary: claim.summary,
                     taskTitle: task.displayTitle,
                 )
+                state.batches[batchIndex].attentionReason = .none
                 state.batches[batchIndex].updatedAt = effectiveClaimedAt
                 state.recordTaskClaim(batchID: binding.batchID, claimedAt: effectiveClaimedAt)
 
@@ -1256,7 +1387,7 @@ final class WorkBatchAutoRouter {
         }
 
         if state != originalState {
-            try stateStore.save(state)
+            commitWorkingState(state, for: project.path)
         }
 
         return results
@@ -1266,9 +1397,8 @@ final class WorkBatchAutoRouter {
         project: Project,
         now: Date,
     ) throws -> [WorkBatchCheckpointIngestResult] {
-        let stateStore = stateStoreFactory(project.path)
         let bindingStore = bindingStoreFactory(project.path)
-        var state = try stateStore.load()
+        var state = workingState(for: project.path)
         var bindings = try bindingStore.load()
         guard !bindings.isEmpty else { return [] }
 
@@ -1324,7 +1454,9 @@ final class WorkBatchAutoRouter {
                 state.tasks[taskIndex].status = .needsYou
                 state.tasks[taskIndex].updatedAt = requestTime
                 state.batches[batchIndex].status = .waiting
-                state.batches[batchIndex].currentActivitySummary = "Checkpoint ready: \(questionSentence(request.question))"
+                state.batches[batchIndex].currentActivitySummary =
+                    "Checkpoint ready: \(WorkBatchSummaryText.questionSentence(request.question))"
+                state.batches[batchIndex].attentionReason = .none
                 state.batches[batchIndex].updatedAt = requestTime
                 bindings[bindingIndex].status = .waiting
                 bindings[bindingIndex].updatedAt = requestTime
@@ -1343,10 +1475,11 @@ final class WorkBatchAutoRouter {
         }
 
         if state != originalState {
-            try stateStore.save(state)
+            commitWorkingState(state, for: project.path)
         }
         if bindings != originalBindings {
             try bindingStore.save(bindings)
+            recomputeProjections(for: project.path)
         }
 
         for batchID in batchesNeedingMirrorRewrite {
@@ -1377,7 +1510,7 @@ final class WorkBatchAutoRouter {
             }
         }
         if state != originalState {
-            try stateStore.save(state)
+            commitWorkingState(state, for: project.path)
         }
 
         return results
@@ -1439,17 +1572,6 @@ final class WorkBatchAutoRouter {
         return "\(value)."
     }
 
-    private func doneSummary(taskTitle: String) -> String {
-        let title = taskTitle.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !title.isEmpty else { return "Done." }
-        if let last = title.last,
-           [".", "!", "?"].contains(last)
-        {
-            return "Done: \(title)"
-        }
-        return "Done: \(title)."
-    }
-
     private func workingSummary(claimSummary: String?, taskTitle: String) -> String {
         let trimmed = claimSummary?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         let value = trimmed.isEmpty ? "Working on \(taskTitle)" : trimmed
@@ -1459,17 +1581,6 @@ final class WorkBatchAutoRouter {
             return value
         }
         return "\(value)."
-    }
-
-    private func questionSentence(_ rawQuestion: String) -> String {
-        let trimmed = rawQuestion.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return "User input needed." }
-        if let last = trimmed.last,
-           [".", "!", "?"].contains(last)
-        {
-            return trimmed
-        }
-        return "\(trimmed)?"
     }
 
     private func shouldResumeExistingBinding(_ binding: WorkBatchCockpitBinding) -> Bool {
@@ -1518,24 +1629,24 @@ final class WorkBatchAutoRouter {
         "\(assignedSessionID) (duplicate process)"
     }
 
-    private func duplicateCockpitSummary(
+    private func duplicateCockpitAttentionReason(
         for binding: WorkBatchCockpitBinding?,
         batchID: String,
         issues: [WorkBatchBindingReconciliationIssue],
-    ) -> String {
+    ) -> WorkBatchAttentionReason {
         guard let binding,
               binding.batchID == batchID,
               hasAssignedSessionProcessDuplicateIssue(for: binding, in: issues),
               !hasBlockingDuplicateCockpitIssue(for: binding, in: issues)
         else {
-            return "Multiple Claude Code sessions match this Work Batch."
+            return .duplicateCockpit(assignedProcessDuplicate: false)
         }
-        return "Claude Code is already open; click to re-enter."
+        return .duplicateCockpit(assignedProcessDuplicate: true)
     }
 
     @discardableResult
     private func applyDeliveryPolicy(
-        stateStore: WorkBatchStateStore,
+        projectPath: String,
         bindingStore: WorkBatchCockpitBindingStore,
         batchID: String,
         preferredTaskID: String?,
@@ -1543,7 +1654,7 @@ final class WorkBatchAutoRouter {
         mirrorWriteSucceeded: Bool,
         now: Date,
     ) async throws -> WorkBatchCockpitBinding? {
-        let state = try stateStore.load()
+        let state = workingState(for: projectPath)
         let binding = try bindingStore.binding(batchID: batchID)
         let batchTasks = state.tasks.filter { $0.batchID == batchID }
         let batchCheckpoints = state.checkpoints.filter { $0.batchID == batchID }
@@ -1578,7 +1689,7 @@ final class WorkBatchAutoRouter {
             do {
                 try await taskSessionCoordinator.wakeExistingSession(binding, prompt: prompt)
                 return try markExistingSessionWoken(
-                    stateStore: stateStore,
+                    projectPath: projectPath,
                     bindingStore: bindingStore,
                     binding: binding,
                     batchID: batchID,
@@ -1588,16 +1699,19 @@ final class WorkBatchAutoRouter {
             } catch {
                 if let taskID {
                     try markLaunchFailed(
-                        stateStore: stateStore,
+                        projectPath: projectPath,
                         batchID: batchID,
                         taskID: taskID,
                         now: now,
                     )
                 } else {
+                    // 3a parity: the wake catch with no Task to re-queue showed
+                    // "Claude Code wake needs attention." — keep it distinct from
+                    // the genuine delivery-failure string via `.wakeFailed`.
                     try markBatchDeliveryWaiting(
-                        stateStore: stateStore,
+                        projectPath: projectPath,
                         batchID: batchID,
-                        summary: "Claude Code wake needs attention.",
+                        attentionReason: .wakeFailed,
                         now: now,
                     )
                 }
@@ -1605,37 +1719,40 @@ final class WorkBatchAutoRouter {
             }
 
         case .waitForCheckpoint:
-            let checkpointSummary = state.checkpoints
+            // The pending checkpoint is the active item: record its bespoke
+            // "Checkpoint ready: <question>" line as the genuine activity datum
+            // (deriveBatchPresentation passes it through when it matches the
+            // checkpoint question). Clear any attention reason.
+            let checkpointLine = state.checkpoints
                 .first(where: { $0.batchID == batchID && $0.status == .pending })
-                .map { "Checkpoint ready: \(questionSentence($0.question))" }
-                ?? "Checkpoint needs your input."
-            try markBatchDeliveryWaiting(
-                stateStore: stateStore,
+                .map { "Checkpoint ready: \(WorkBatchSummaryText.questionSentence($0.question))" }
+            try markBatchWaitingCheckpoint(
+                projectPath: projectPath,
                 batchID: batchID,
-                summary: checkpointSummary,
+                recordedLine: checkpointLine,
                 now: now,
             )
             return binding
 
         case .waitForDuplicateCockpit:
-            let summary = duplicateCockpitSummary(
+            let attentionReason = duplicateCockpitAttentionReason(
                 for: binding,
                 batchID: batchID,
                 issues: reconciliationIssues,
             )
             if let taskID = preferredTaskID ?? firstOpenTaskID(in: batchTasks) {
                 try markReconciliationBlocked(
-                    stateStore: stateStore,
+                    projectPath: projectPath,
                     batchID: batchID,
                     taskID: taskID,
-                    summary: summary,
+                    attentionReason: attentionReason,
                     now: now,
                 )
             } else {
                 try markBatchDeliveryWaiting(
-                    stateStore: stateStore,
+                    projectPath: projectPath,
                     batchID: batchID,
-                    summary: summary,
+                    attentionReason: attentionReason,
                     now: now,
                 )
             }
@@ -1643,9 +1760,9 @@ final class WorkBatchAutoRouter {
 
         case .waitForDeliveryFailure:
             try markBatchDeliveryWaiting(
-                stateStore: stateStore,
+                projectPath: projectPath,
                 batchID: batchID,
-                summary: "Claude Code delivery needs attention.",
+                attentionReason: .deliveryFailure,
                 now: now,
             )
             return binding
@@ -1656,9 +1773,9 @@ final class WorkBatchAutoRouter {
                 .flatMap { id in batchTasks.first(where: { $0.id == id })?.displayTitle }
                 ?? "the queued Task"
             try markBatchPickupTimedOut(
-                stateStore: stateStore,
+                projectPath: projectPath,
                 batchID: batchID,
-                summary: "Claude Code has not picked up \(taskTitle) yet. Click to re-enter.",
+                attentionReason: .pickupTimeout(taskID: taskID ?? "", taskTitle: taskTitle),
                 now: now,
             )
             return binding
@@ -1678,7 +1795,7 @@ final class WorkBatchAutoRouter {
                     prompt: prompt,
                 )
                 return try markResumeStarted(
-                    stateStore: stateStore,
+                    projectPath: projectPath,
                     bindingStore: bindingStore,
                     binding: binding,
                     batchID: batchID,
@@ -1688,16 +1805,16 @@ final class WorkBatchAutoRouter {
             } catch {
                 if let taskID {
                     try markLaunchFailed(
-                        stateStore: stateStore,
+                        projectPath: projectPath,
                         batchID: batchID,
                         taskID: taskID,
                         now: now,
                     )
                 } else {
                     try markBatchDeliveryWaiting(
-                        stateStore: stateStore,
+                        projectPath: projectPath,
                         batchID: batchID,
-                        summary: "Claude Code launch needs attention.",
+                        attentionReason: .launchFailed,
                         now: now,
                     )
                 }
@@ -1828,16 +1945,15 @@ final class WorkBatchAutoRouter {
     }
 
     private func runtimeSessionLooksAwaitingInput(_ session: RuntimeSession) -> Bool {
-        let state = session.state.lowercased()
-        if state == "ready" {
+        if session.state == .ready {
             return true
         }
-        return state == "idle" &&
+        return session.state == .idle &&
             session.stateSource?.authority == "meta_awaiting_input"
     }
 
     private func runtimeSessionIsReadyWithoutTools(_ session: RuntimeSession) -> Bool {
-        session.state.lowercased() == "ready" &&
+        session.state == .ready &&
             session.toolsInFlight == 0 &&
             session.isAlive == true
     }
@@ -1874,6 +1990,7 @@ final class WorkBatchAutoRouter {
                 var existing = state.batches[index]
                 existing.status = .working
                 existing.currentActivitySummary = "Queued \(task.displayTitle) in \(existing.name)."
+                existing.attentionReason = .none
                 existing.updatedAt = now
                 if !existing.taskIDs.contains(task.id) {
                     existing.taskIDs.append(task.id)
@@ -1971,26 +2088,26 @@ final class WorkBatchAutoRouter {
     }
 
     private func markLaunchFailed(
-        stateStore: WorkBatchStateStore,
+        projectPath: String,
         batchID: String,
         taskID: String,
         now: Date,
     ) throws {
-        var state = try stateStore.load()
+        var state = workingState(for: projectPath)
         if let batchIndex = state.batches.firstIndex(where: { $0.id == batchID }) {
             state.batches[batchIndex].status = .waiting
-            state.batches[batchIndex].currentActivitySummary = "Claude Code launch needs attention."
+            state.batches[batchIndex].attentionReason = .launchFailed
             state.batches[batchIndex].updatedAt = now
         }
         if let taskIndex = state.tasks.firstIndex(where: { $0.id == taskID }) {
             state.tasks[taskIndex].status = .queued
             state.tasks[taskIndex].updatedAt = now
         }
-        try stateStore.save(state)
+        commitWorkingState(state, for: projectPath)
     }
 
     private func markResumeStarted(
-        stateStore: WorkBatchStateStore,
+        projectPath: String,
         bindingStore: WorkBatchCockpitBindingStore,
         binding: WorkBatchCockpitBinding,
         batchID: String,
@@ -2002,7 +2119,7 @@ final class WorkBatchAutoRouter {
         updatedBinding.updatedAt = now
         try bindingStore.upsert(updatedBinding)
 
-        var state = try stateStore.load()
+        var state = workingState(for: projectPath)
         let actionableContextDigest = state.deliveryRecord(batchID: batchID)?.lastActionableContextDigest
         if let batchIndex = state.batches.firstIndex(where: { $0.id == batchID }) {
             let taskTitle = taskID
@@ -2010,6 +2127,7 @@ final class WorkBatchAutoRouter {
                 ?? "Task"
             state.batches[batchIndex].status = .working
             state.batches[batchIndex].currentActivitySummary = "Claude Code is reconnecting to \(taskTitle)."
+            state.batches[batchIndex].attentionReason = .none
             state.batches[batchIndex].updatedAt = now
         }
         if let taskID,
@@ -2024,12 +2142,12 @@ final class WorkBatchAutoRouter {
             kind: WorkBatchDeliveryAction.resumeExistingSession.rawValue,
             actionableContextDigest: actionableContextDigest,
         )
-        try stateStore.save(state)
+        commitWorkingState(state, for: projectPath)
         return updatedBinding
     }
 
     private func markExistingSessionWoken(
-        stateStore: WorkBatchStateStore,
+        projectPath: String,
         bindingStore: WorkBatchCockpitBindingStore,
         binding: WorkBatchCockpitBinding,
         batchID: String,
@@ -2041,7 +2159,7 @@ final class WorkBatchAutoRouter {
         updatedBinding.updatedAt = now
         try bindingStore.upsert(updatedBinding)
 
-        var state = try stateStore.load()
+        var state = workingState(for: projectPath)
         let actionableContextDigest = state.deliveryRecord(batchID: batchID)?.lastActionableContextDigest
         if let batchIndex = state.batches.firstIndex(where: { $0.id == batchID }) {
             let taskTitle = taskID
@@ -2049,6 +2167,7 @@ final class WorkBatchAutoRouter {
                 ?? "Task"
             state.batches[batchIndex].status = .working
             state.batches[batchIndex].currentActivitySummary = "Claude Code was nudged to pick up \(taskTitle)."
+            state.batches[batchIndex].attentionReason = .none
             state.batches[batchIndex].updatedAt = now
         }
         if let taskID,
@@ -2063,20 +2182,23 @@ final class WorkBatchAutoRouter {
             kind: WorkBatchDeliveryAction.wakeExistingSession.rawValue,
             actionableContextDigest: actionableContextDigest,
         )
-        try stateStore.save(state)
+        commitWorkingState(state, for: projectPath)
         return updatedBinding
     }
 
-    private func markBatchDeliveryWaiting(
-        stateStore: WorkBatchStateStore,
+    private func markBatchWaitingCheckpoint(
+        projectPath: String,
         batchID: String,
-        summary: String,
+        recordedLine: String?,
         now: Date,
     ) throws {
-        var state = try stateStore.load()
+        var state = workingState(for: projectPath)
         if let batchIndex = state.batches.firstIndex(where: { $0.id == batchID }) {
             state.batches[batchIndex].status = .waiting
-            state.batches[batchIndex].currentActivitySummary = summary
+            state.batches[batchIndex].attentionReason = .none
+            if let recordedLine {
+                state.batches[batchIndex].currentActivitySummary = recordedLine
+            }
             state.batches[batchIndex].updatedAt = now
         }
         for taskIndex in state.tasks.indices where state.tasks[taskIndex].batchID == batchID {
@@ -2086,23 +2208,45 @@ final class WorkBatchAutoRouter {
             state.tasks[taskIndex].status = .queued
             state.tasks[taskIndex].updatedAt = now
         }
-        try stateStore.save(state)
+        commitWorkingState(state, for: projectPath)
+    }
+
+    private func markBatchDeliveryWaiting(
+        projectPath: String,
+        batchID: String,
+        attentionReason: WorkBatchAttentionReason,
+        now: Date,
+    ) throws {
+        var state = workingState(for: projectPath)
+        if let batchIndex = state.batches.firstIndex(where: { $0.id == batchID }) {
+            state.batches[batchIndex].status = .waiting
+            state.batches[batchIndex].attentionReason = attentionReason
+            state.batches[batchIndex].updatedAt = now
+        }
+        for taskIndex in state.tasks.indices where state.tasks[taskIndex].batchID == batchID {
+            guard state.tasks[taskIndex].status != .done,
+                  state.tasks[taskIndex].status != .needsYou
+            else { continue }
+            state.tasks[taskIndex].status = .queued
+            state.tasks[taskIndex].updatedAt = now
+        }
+        commitWorkingState(state, for: projectPath)
     }
 
     private func markBatchPickupTimedOut(
-        stateStore: WorkBatchStateStore,
+        projectPath: String,
         batchID: String,
-        summary: String,
+        attentionReason: WorkBatchAttentionReason,
         now: Date,
     ) throws {
-        var state = try stateStore.load()
+        var state = workingState(for: projectPath)
         var didChange = false
         if let batchIndex = state.batches.firstIndex(where: { $0.id == batchID }) {
             if state.batches[batchIndex].status != .waiting ||
-                state.batches[batchIndex].currentActivitySummary != summary
+                state.batches[batchIndex].attentionReason != attentionReason
             {
                 state.batches[batchIndex].status = .waiting
-                state.batches[batchIndex].currentActivitySummary = summary
+                state.batches[batchIndex].attentionReason = attentionReason
                 state.batches[batchIndex].updatedAt = now
                 didChange = true
             }
@@ -2117,37 +2261,42 @@ final class WorkBatchAutoRouter {
                 didChange = true
             }
         }
+        // Intentional change-detection basis: `attentionReason` includes the
+        // stuck `taskID` in its `Equatable`, so a same-title/different-id pickup
+        // re-trigger bumps `updatedAt`. The DISPLAYED string is identical (it is
+        // derived from the taskTitle only), so this is a negligible reorder, not
+        // a visible flap — kept as-is rather than keying off the title alone.
         guard didChange else { return }
-        try stateStore.save(state)
+        commitWorkingState(state, for: projectPath)
     }
 
     private func markReconciliationBlocked(
-        stateStore: WorkBatchStateStore,
+        projectPath: String,
         batchID: String,
         taskID: String,
-        summary: String,
+        attentionReason: WorkBatchAttentionReason,
         now: Date,
     ) throws {
-        var state = try stateStore.load()
+        var state = workingState(for: projectPath)
         if let batchIndex = state.batches.firstIndex(where: { $0.id == batchID }) {
             state.batches[batchIndex].status = .waiting
-            state.batches[batchIndex].currentActivitySummary = summary
+            state.batches[batchIndex].attentionReason = attentionReason
             state.batches[batchIndex].updatedAt = now
         }
         if let taskIndex = state.tasks.firstIndex(where: { $0.id == taskID }) {
             state.tasks[taskIndex].status = .queued
             state.tasks[taskIndex].updatedAt = now
         }
-        try stateStore.save(state)
+        commitWorkingState(state, for: projectPath)
     }
 
     private func reconcileBindings(
-        stateStore: WorkBatchStateStore,
+        projectPath: String,
         bindingStore: WorkBatchCockpitBindingStore,
         sessions: [RuntimeSession],
         now: Date,
     ) throws -> WorkBatchBindingReconciliationResult {
-        let state = try stateStore.load()
+        let state = workingState(for: projectPath)
         let bindings = try bindingStore.load()
         guard !bindings.isEmpty else {
             return WorkBatchBindingReconciliationResult(state: state, bindings: bindings, issues: [])
@@ -2161,10 +2310,11 @@ final class WorkBatchAutoRouter {
             processSessionIDs: processSessionIDs,
         )
         if result.state != state {
-            try stateStore.save(result.state)
+            commitWorkingState(result.state, for: projectPath)
         }
         if result.bindings != bindings {
             try bindingStore.save(result.bindings)
+            recomputeProjections(for: projectPath)
         }
         return result
     }

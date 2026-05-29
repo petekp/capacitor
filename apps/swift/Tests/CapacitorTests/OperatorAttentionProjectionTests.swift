@@ -527,7 +527,7 @@ final class OperatorAttentionProjectionTests: XCTestCase {
             projectPath: projectPath,
             methodId: "method",
             methodName: methodName,
-            status: status,
+            status: try! RunStatus.decode(wire: status),
             sessionId: nil,
             delegationWorkerId: nil,
             statusMessage: statusMessage,
@@ -626,7 +626,7 @@ final class OperatorAttentionProjectionTests: XCTestCase {
             worktreeName: "delegation-worker-1",
             worktreePath: "\(projectPath)/.capacitor/worktrees/delegation-worker-1",
             sessionId: "session-1",
-            status: status,
+            status: try! DelegationStatus.decode(wire: status),
             startedAt: "2027-01-15T07:45:00Z",
             updatedAt: "2027-01-15T08:00:00Z",
             currentReview: RuntimeDelegationReview(

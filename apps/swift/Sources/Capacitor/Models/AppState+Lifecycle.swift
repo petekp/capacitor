@@ -115,9 +115,9 @@ extension AppState {
                             snapshot,
                             context: context,
                         )
-                    case let .unchanged(snapshotVersion):
+                    case let .unchanged(changeVersion):
                         unavailableRetryDelay = 1_000_000_000
-                        runtimeSnapshotApplicator.recordLongPollUnchanged(snapshotVersion: snapshotVersion)
+                        runtimeSnapshotApplicator.recordLongPollUnchanged(changeVersion: changeVersion)
                     case .unavailable:
                         DebugLog.write(
                             "AppState.longPollSnapshot source=runtime_snapshot_long_poll_unavailable retry_in_ms=\(unavailableRetryDelay / 1_000_000)",
@@ -250,6 +250,14 @@ extension AppState {
         )
         handleWorkBatchCheckpointIngestResults(checkpoints, projects: context.projects)
         await followThroughOpenWorkBatchTasks(projects: context.projects)
+        // Refresh projections whose cached value embeds LIVE preview state
+        // (derived from NSRunningApplication). Quitting a preview app does not
+        // mutate any store, so without this poll-cadence recompute the cached
+        // projection would freeze a stale .ready/.conflict and show a stale
+        // preview button. Diff-gated inside the router to avoid render thrash.
+        workBatchAutoRouter.refreshPreviewSensitiveProjections(
+            for: context.projects.map(\.path),
+        )
     }
 
     @MainActor
@@ -423,7 +431,7 @@ extension AppState {
                 clientTty: clientTty,
                 sessionName: sessionName,
             )
-            guard snapshot.status != "unavailable", snapshot.target.kind != "none" else {
+            guard snapshot.status != .unavailable, snapshot.target.kind != "none" else {
                 return nil
             }
             return RuntimeRoutingView(

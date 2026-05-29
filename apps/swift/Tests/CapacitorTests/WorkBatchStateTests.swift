@@ -111,6 +111,178 @@ final class WorkBatchStateTests: XCTestCase {
         XCTAssertEqual(try store.load().deliveryRecords, [])
     }
 
+    func testStateStoreLoadsOlderBatchesWithoutAttentionReasonAsNone() throws {
+        let fileManager = FileManager.default
+        let tempDir = fileManager.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try fileManager.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        addTeardownBlock {
+            try? fileManager.removeItem(at: tempDir)
+        }
+
+        // A batch written before the T2 teardown has no `attention_reason` key.
+        // It must decode to `.none` rather than failing the whole snapshot.
+        let storeURL = tempDir.appendingPathComponent("state.json")
+        try """
+        {
+          "version": 1,
+          "batches": [
+            {
+              "id": "batch-mobile",
+              "name": "Mobile prototype",
+              "project_path": "/tmp/project",
+              "status": "waiting",
+              "current_activity_summary": "Multiple Claude Code sessions match this Work Batch.",
+              "task_ids": ["task-green"],
+              "cockpit_binding_id": "batch-mobile",
+              "created_at": "2026-05-01T00:00:00Z",
+              "updated_at": "2026-05-01T00:00:00Z"
+            }
+          ],
+          "tasks": [],
+          "classifications": []
+        }
+        """.write(to: storeURL, atomically: true, encoding: .utf8)
+
+        let store = WorkBatchStateStore(fileURL: storeURL, fileManager: fileManager)
+        let loaded = try store.load()
+        XCTAssertEqual(loaded.batches.count, 1)
+        XCTAssertEqual(loaded.batches.first?.attentionReason, WorkBatchAttentionReason.none)
+    }
+
+    func testStateStoreRoundTripsAttentionReasonVariants() throws {
+        let fileManager = FileManager.default
+        let tempDir = fileManager.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try fileManager.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        addTeardownBlock {
+            try? fileManager.removeItem(at: tempDir)
+        }
+
+        let now = Date(timeIntervalSince1970: 1_775_000_000)
+        let reasons: [WorkBatchAttentionReason] = [
+            .none,
+            .duplicateCockpit(assignedProcessDuplicate: false),
+            .duplicateCockpit(assignedProcessDuplicate: true),
+            .pickupTimeout(taskID: "task-green", taskTitle: "Add green border"),
+            .launchFailed,
+            .wakeFailed,
+            .deliveryFailure,
+            .needsReconnect,
+        ]
+
+        let batches = reasons.enumerated().map { index, reason in
+            WorkBatchRecord(
+                id: "batch-\(index)",
+                name: "Batch \(index)",
+                projectPath: "/tmp/project",
+                status: .waiting,
+                currentActivitySummary: "",
+                taskIDs: [],
+                cockpitBindingID: nil,
+                attentionReason: reason,
+                createdAt: now,
+                updatedAt: now,
+            )
+        }
+        let snapshot = WorkBatchStateSnapshot(version: 1, batches: batches, tasks: [], classifications: [])
+        let store = WorkBatchStateStore(
+            fileURL: tempDir.appendingPathComponent("state.json"),
+            fileManager: fileManager,
+        )
+        try store.save(snapshot)
+        XCTAssertEqual(try store.load().batches.map(\.attentionReason), reasons)
+    }
+
+    func testStateStoreDecodesWakeFailedAttentionReasonFromDiskKey() throws {
+        // Pin the persisted discriminator key ("wake_failed") for the new
+        // attention variant restored for 3a parity. A future rename would break
+        // round-trip silently otherwise.
+        let fileManager = FileManager.default
+        let tempDir = fileManager.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try fileManager.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        addTeardownBlock { try? fileManager.removeItem(at: tempDir) }
+
+        let storeURL = tempDir.appendingPathComponent("state.json")
+        try """
+        {
+          "version": 1,
+          "batches": [
+            {
+              "id": "batch-mobile",
+              "name": "Mobile prototype",
+              "project_path": "/tmp/project",
+              "status": "waiting",
+              "current_activity_summary": "",
+              "task_ids": [],
+              "cockpit_binding_id": null,
+              "attention_reason": { "kind": "wake_failed" },
+              "created_at": "2026-05-01T00:00:00Z",
+              "updated_at": "2026-05-01T00:00:00Z"
+            }
+          ],
+          "tasks": [],
+          "classifications": []
+        }
+        """.write(to: storeURL, atomically: true, encoding: .utf8)
+
+        let loaded = try WorkBatchStateStore(fileURL: storeURL, fileManager: fileManager).load()
+        XCTAssertEqual(loaded.batches.first?.attentionReason, WorkBatchAttentionReason.wakeFailed)
+    }
+
+    func testStateStoreDecodesUnknownAttentionReasonKindAsNoneWithoutThrowing() throws {
+        // FORWARD-COMPAT (finding 4 of the parity re-review): attentionReason is
+        // a LOCAL persisted enum, not a wire-status contract. A state file
+        // written by a NEWER build may carry an attention kind this build does
+        // not recognize. Decoding must degrade that to `.none` rather than
+        // throwing and failing the whole snapshot load, so an older build can
+        // still open a newer state file. The rest of the snapshot must load.
+        let fileManager = FileManager.default
+        let tempDir = fileManager.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try fileManager.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        addTeardownBlock { try? fileManager.removeItem(at: tempDir) }
+
+        let storeURL = tempDir.appendingPathComponent("state.json")
+        try """
+        {
+          "version": 1,
+          "batches": [
+            {
+              "id": "batch-mobile",
+              "name": "Mobile prototype",
+              "project_path": "/tmp/project",
+              "status": "waiting",
+              "current_activity_summary": "Working on something.",
+              "task_ids": ["task-green"],
+              "cockpit_binding_id": "batch-mobile",
+              "attention_reason": { "kind": "some_future_reason" },
+              "created_at": "2026-05-01T00:00:00Z",
+              "updated_at": "2026-05-01T00:00:00Z"
+            }
+          ],
+          "tasks": [
+            {
+              "id": "task-green",
+              "source_idea_id": "task-green",
+              "title": "Add green border",
+              "body": "",
+              "status": "queued",
+              "batch_id": "batch-mobile",
+              "created_at": "2026-05-01T00:00:00Z",
+              "updated_at": "2026-05-01T00:00:00Z"
+            }
+          ],
+          "classifications": []
+        }
+        """.write(to: storeURL, atomically: true, encoding: .utf8)
+
+        let loaded = try WorkBatchStateStore(fileURL: storeURL, fileManager: fileManager).load()
+        XCTAssertEqual(loaded.batches.count, 1)
+        XCTAssertEqual(loaded.batches.first?.attentionReason, WorkBatchAttentionReason.none)
+        // Rest of the snapshot still loads.
+        XCTAssertEqual(loaded.tasks.count, 1)
+        XCTAssertEqual(loaded.tasks.first?.id, "task-green")
+        XCTAssertEqual(loaded.batches.first?.currentActivitySummary, "Working on something.")
+    }
+
     func testStateStorePersistsDeliveryRecords() throws {
         let fileManager = FileManager.default
         let tempDir = fileManager.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)

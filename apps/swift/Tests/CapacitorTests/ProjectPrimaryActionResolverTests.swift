@@ -11,7 +11,7 @@ final class ProjectPrimaryActionResolverTests: XCTestCase {
                 worktreeName: "delegation-worker-1",
                 worktreePath: "/tmp/core-project/.capacitor/worktrees/delegation-worker-1",
                 sessionId: "worker-session-1",
-                status: "review_needed",
+                status: .reviewNeeded,
                 startedAt: "2026-02-28T19:00:00Z",
                 updatedAt: "2026-02-28T19:05:00Z",
                 currentReview: RuntimeDelegationReview(
@@ -36,7 +36,7 @@ final class ProjectPrimaryActionResolverTests: XCTestCase {
                 worktreeName: "delegation-worker-1",
                 worktreePath: "/tmp/core-project/.capacitor/worktrees/delegation-worker-1",
                 sessionId: "worker-session-1",
-                status: "review_needed",
+                status: .reviewNeeded,
                 startedAt: "2026-02-28T19:00:00Z",
                 updatedAt: "2026-02-28T19:05:00Z",
                 currentReview: RuntimeDelegationReview(
@@ -61,7 +61,7 @@ final class ProjectPrimaryActionResolverTests: XCTestCase {
                 worktreeName: "delegation-worker-1",
                 worktreePath: "/tmp/core-project/.capacitor/worktrees/delegation-worker-1",
                 sessionId: "worker-session-1",
-                status: "resume_failed",
+                status: .resumeFailed,
                 startedAt: "2026-02-28T19:00:00Z",
                 updatedAt: "2026-02-28T19:05:00Z",
                 currentReview: RuntimeDelegationReview(
@@ -86,7 +86,7 @@ final class ProjectPrimaryActionResolverTests: XCTestCase {
                 worktreeName: "delegation-worker-1",
                 worktreePath: "/tmp/core-project/.capacitor/worktrees/delegation-worker-1",
                 sessionId: "worker-session-1",
-                status: "resume_pending",
+                status: .resumePending,
                 startedAt: "2026-02-28T19:00:00Z",
                 updatedAt: "2026-02-28T19:05:00Z",
                 currentReview: RuntimeDelegationReview(

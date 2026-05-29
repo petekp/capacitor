@@ -208,34 +208,10 @@ final class MethodRunCoordinator: @unchecked Sendable {
         if let projectPath {
             _Concurrency.Task {
                 do {
-                    try await mutateRun(RuntimeRunMutationRequest(
+                    try await mutateRun(.status(
                         kind: "cancel",
                         projectPath: projectPath,
                         runId: runID,
-                        checkpointId: nil,
-                        methodId: nil,
-                        involvement: nil,
-                        checkpointKind: nil,
-                        checkpointTitle: nil,
-                        checkpointSummary: nil,
-                        checkpointBriefPath: nil,
-                        checkpointManifestPath: nil,
-                        checkpointMediaArtifacts: [],
-                        checkpointMermaidSources: [],
-                        captureUrl: nil,
-                        decisionAction: nil,
-                        decisionNote: nil,
-                        sessionId: nil,
-                        delegationWorkerId: nil,
-                        statusMessage: nil,
-                        captureRequestId: nil,
-                        clientId: nil,
-                        observedCaptureUrl: nil,
-                        captureFailureReason: nil,
-                        completedMediaArtifacts: [],
-                        ideaId: nil,
-                        ideaTitle: nil,
-                        ideaDescription: nil,
                     ))
                 } catch {
                     DebugLog.write(
@@ -361,34 +337,11 @@ final class MethodRunCoordinator: @unchecked Sendable {
         statusMessage: String?,
     ) async {
         do {
-            try await mutateRun(RuntimeRunMutationRequest(
+            try await mutateRun(.status(
                 kind: "fail",
                 projectPath: projectPath,
                 runId: runID,
-                checkpointId: nil,
-                methodId: nil,
-                involvement: nil,
-                checkpointKind: nil,
-                checkpointTitle: nil,
-                checkpointSummary: nil,
-                checkpointBriefPath: nil,
-                checkpointManifestPath: nil,
-                checkpointMediaArtifacts: [],
-                checkpointMermaidSources: [],
-                captureUrl: nil,
-                decisionAction: nil,
-                decisionNote: nil,
-                sessionId: nil,
-                delegationWorkerId: nil,
                 statusMessage: statusMessage,
-                captureRequestId: nil,
-                clientId: nil,
-                observedCaptureUrl: nil,
-                captureFailureReason: nil,
-                completedMediaArtifacts: [],
-                ideaId: nil,
-                ideaTitle: nil,
-                ideaDescription: nil,
             ))
         } catch {
             DebugLog.write(

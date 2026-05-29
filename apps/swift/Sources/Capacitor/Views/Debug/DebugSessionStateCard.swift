@@ -136,7 +136,7 @@ import SwiftUI
                     Circle()
                         .fill(stateColor)
                         .frame(width: 6, height: 6)
-                    Text("\(session.state.uppercased())")
+                    Text("\(session.state.wireValue.uppercased())")
                         .font(.caption2)
                         .foregroundColor(.white.opacity(0.85))
                     Text(projectName(from: session.projectPath))
@@ -175,21 +175,8 @@ import SwiftUI
             return name.isEmpty ? path : name
         }
 
-        private func color(for state: String) -> Color {
-            switch state.lowercased() {
-            case "working":
-                Color.statusColor(for: .working)
-            case "ready":
-                Color.statusColor(for: .ready)
-            case "waiting":
-                Color.statusColor(for: .waiting)
-            case "compacting":
-                Color.statusColor(for: .compacting)
-            case "idle":
-                Color.statusColor(for: .idle)
-            default:
-                Color.white.opacity(0.5)
-            }
+        private func color(for state: SessionState) -> Color {
+            Color.statusColor(for: state)
         }
 
         private func relativeTimestamp(_ date: Date) -> String {

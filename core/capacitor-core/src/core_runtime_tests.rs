@@ -2,10 +2,9 @@ use super::{CoreRuntime, VersionNotifier};
 use crate::domain::CheckpointKind;
 use crate::domain::{
     default_workspace_id, AppSnapshot, DelegationMutationKind, DiagnosticsSummary, HookEventType,
-    IdeaMutationKind, IngestHookEventCommand, IngestShellSignalCommand, MutateDelegationCommand,
-    MutateIdeaCommand, MutateProjectCommand, MutateRunCommand, MutateWorktreeCommand,
-    ProjectMutationKind, ProjectSummary, RunMutationKind, SessionState, SessionSummary,
-    ShellUnregisterCommand, WorktreeMutationKind,
+    IngestHookEventCommand, IngestShellSignalCommand, MutateDelegationCommand,
+    MutateProjectCommand, MutateRunCommand, ProjectMutationKind, ProjectSummary, RunMutationKind,
+    SessionState, SessionSummary, ShellUnregisterCommand,
 };
 use crate::runtime::service::{RUNTIME_SERVICE_PORT_ENV, RUNTIME_SERVICE_TOKEN_ENV};
 use crate::runtime::state::snapshot::test_support::{
@@ -91,11 +90,11 @@ fn runtime_tracks_project_and_session_in_snapshot() {
 }
 
 #[test]
-fn test_snapshot_version_increments_on_mutation() {
+fn test_change_version_increments_on_mutation() {
     let runtime = CoreRuntime::new().expect("runtime");
 
     let initial = runtime.app_snapshot().expect("initial snapshot");
-    assert_eq!(initial.snapshot_version, 0);
+    assert_eq!(initial.change_version, 0);
 
     runtime
         .ingest_hook_event(IngestHookEventCommand {
@@ -118,21 +117,148 @@ fn test_snapshot_version_increments_on_mutation() {
 
     let updated = runtime.app_snapshot().expect("updated snapshot");
     assert!(
-        updated.snapshot_version > initial.snapshot_version,
+        updated.change_version > initial.change_version,
         "expected mutation to advance snapshot version, got {} -> {}",
-        initial.snapshot_version,
-        updated.snapshot_version
+        initial.change_version,
+        updated.change_version
     );
 }
 
 #[test]
-fn test_snapshot_version_stable_on_read() {
+fn test_change_version_stable_on_read() {
     let runtime = CoreRuntime::new().expect("runtime");
 
     let first = runtime.app_snapshot().expect("first snapshot");
     let second = runtime.app_snapshot().expect("second snapshot");
 
-    assert_eq!(first.snapshot_version, second.snapshot_version);
+    assert_eq!(first.change_version, second.change_version);
+}
+
+#[test]
+fn test_rejected_mutation_does_not_advance_change_counter() {
+    // B2 documented rule: bump_version_and_notify (which wakes long-pollers and
+    // advances the change counter exposed via app_snapshot().change_version)
+    // must only fire when a mutation is accepted (MutationOutcome.ok == true).
+    // A rejected mutation changes no state, so it must not wake pollers or
+    // advance the counter. These triggers all sit on paths that bumped
+    // UNCONDITIONALLY before the commit() combinator landed, so this test was
+    // RED against pre-B2 code and proves the fix.
+    let runtime = CoreRuntime::new().expect("runtime");
+
+    let baseline = runtime.app_snapshot().expect("baseline snapshot");
+    assert_eq!(baseline.change_version, 0);
+
+    // ingest_shell_signal with empty cwd/tty is a deterministic reducer reject.
+    let outcome = runtime
+        .ingest_shell_signal(IngestShellSignalCommand {
+            pid: 4242,
+            cwd: String::new(),
+            tty: String::new(),
+            parent_app: "terminal".to_string(),
+            tmux_session: None,
+            tmux_client_tty: None,
+            tmux_pane: None,
+            tmux_panes: vec![],
+            recorded_at: Utc::now().to_rfc3339(),
+        })
+        .expect("ingest shell signal");
+    assert!(!outcome.ok, "empty cwd/tty must be rejected");
+    assert_eq!(
+        runtime
+            .app_snapshot()
+            .expect("snapshot after rejected shell signal")
+            .change_version,
+        baseline.change_version,
+        "rejected shell signal must not advance the change counter",
+    );
+
+    // mutate_run with empty run_id is a deterministic reducer reject.
+    let mut bad_run = make_run_create_command("", "/repo/run");
+    bad_run.run_id = String::new();
+    let outcome = runtime.mutate_run(bad_run).expect("mutate run");
+    assert!(!outcome.ok, "empty run_id must be rejected");
+    assert_eq!(
+        runtime
+            .app_snapshot()
+            .expect("snapshot after rejected run")
+            .change_version,
+        baseline.change_version,
+        "rejected run mutation must not advance the change counter",
+    );
+
+    // mutate_delegation Complete on an absent delegation is a deterministic reject.
+    let mut complete = make_delegation_start_command("/repo/absent", "worker-absent");
+    complete.kind = DelegationMutationKind::Complete;
+    let outcome = runtime
+        .mutate_delegation(complete)
+        .expect("mutate delegation");
+    assert!(
+        !outcome.ok,
+        "completing an absent delegation must be rejected"
+    );
+    assert_eq!(
+        runtime
+            .app_snapshot()
+            .expect("snapshot after rejected delegation")
+            .change_version,
+        baseline.change_version,
+        "rejected delegation mutation must not advance the change counter",
+    );
+
+    // ingest_hook_event is the highest-volume ingest path. An empty event_id is a
+    // deterministic reducer reject (apply_hook_event_with_gc_reference_time returns
+    // ok:false before touching session state).
+    let mut bad_hook = make_hook_event_command("evt-reject", "session-reject", "/repo/reject");
+    bad_hook.event_id = String::new();
+    let outcome = runtime
+        .ingest_hook_event(bad_hook)
+        .expect("ingest hook event");
+    assert!(!outcome.ok, "empty event_id must be rejected");
+    assert_eq!(
+        runtime
+            .app_snapshot()
+            .expect("snapshot after rejected hook event")
+            .change_version,
+        baseline.change_version,
+        "rejected hook event must not advance the change counter",
+    );
+
+    // A long-poller waiting since the baseline version must NOT be woken by any
+    // of the rejected mutations above (the counter never advanced).
+    let woke =
+        runtime.wait_for_version_change(baseline.change_version, StdDuration::from_millis(50));
+    assert_eq!(
+        woke, None,
+        "rejected mutations must not wake long-pollers waiting since the baseline version",
+    );
+}
+
+#[test]
+fn test_rejected_project_rename_does_not_advance_change_counter() {
+    // Positive control on an already-guarded path: mutate_project Rename of an
+    // absent project returns ok:false and (already) does not bump. This keeps
+    // explicit coverage of the guarded path after migration onto commit().
+    let runtime = CoreRuntime::new().expect("runtime");
+    let baseline = runtime.app_snapshot().expect("baseline snapshot");
+
+    let outcome = runtime
+        .mutate_project(MutateProjectCommand {
+            kind: ProjectMutationKind::Rename,
+            project_path: "/repo/never-added".to_string(),
+            display_name: Some("renamed".to_string()),
+        })
+        .expect("mutate project");
+    assert!(!outcome.ok, "renaming an absent project must be rejected");
+    assert!(outcome.message.contains("not found"));
+
+    assert_eq!(
+        runtime
+            .app_snapshot()
+            .expect("snapshot after rejected rename")
+            .change_version,
+        baseline.change_version,
+        "rejected project rename must not advance the change counter",
+    );
 }
 
 #[test]
@@ -146,8 +272,8 @@ fn test_snapshot_idempotent_without_gc() {
     let first = runtime.app_snapshot().expect("first snapshot");
     let second = runtime.app_snapshot().expect("second snapshot");
 
-    assert_eq!(first.snapshot_version, 0);
-    assert_eq!(second.snapshot_version, 0);
+    assert_eq!(first.change_version, 0);
+    assert_eq!(second.change_version, 0);
     assert_eq!(first.sessions, second.sessions);
     assert_eq!(first.sessions.len(), 1);
     assert_eq!(first.sessions[0].state, SessionState::Waiting);
@@ -177,6 +303,14 @@ fn mutate_run_with_commit_rolls_back_accepted_mutation_when_commit_fails() {
     emit.checkpoint_title = Some("Commit checkpoint".to_string());
     runtime.mutate_run(emit).expect("emit checkpoint");
 
+    // Pin the no-bump-on-rollback contract: try_commit must not advance the change
+    // counter when the commit fails and the accepted mutation is rolled back, since
+    // the rolled-back ok:false outcome leaves no observable state change.
+    let version_before_rollback = runtime
+        .app_snapshot()
+        .expect("snapshot after setup mutations")
+        .change_version;
+
     let mut submit = make_run_create_command("run-commit", "/repo/run");
     submit.kind = RunMutationKind::SubmitDecision;
     submit.checkpoint_id = Some("checkpoint-commit".to_string());
@@ -188,6 +322,15 @@ fn mutate_run_with_commit_rolls_back_accepted_mutation_when_commit_fails() {
 
     assert!(!outcome.ok);
     assert!(outcome.message.contains("run mutation commit failed"));
+
+    assert_eq!(
+        runtime
+            .app_snapshot()
+            .expect("snapshot after rolled-back commit")
+            .change_version,
+        version_before_rollback,
+        "rolled-back commit-failing mutation must not advance the change counter",
+    );
 
     let snapshot = runtime.app_snapshot().expect("snapshot");
     let run = snapshot
@@ -302,30 +445,6 @@ fn test_all_mutation_paths_notify() {
 
     assert_mutation_advances_version_and_wakes(CoreRuntime::new().expect("runtime"), |runtime| {
         runtime
-            .mutate_idea(MutateIdeaCommand {
-                kind: IdeaMutationKind::Add,
-                project_path: "/repo/idea".to_string(),
-                idea_id: "idea-001".to_string(),
-                title: Some("Version notifier".to_string()),
-                description: Some("prove wakeups".to_string()),
-                status: Some("new".to_string()),
-            })
-            .map(|_| ())
-    });
-
-    assert_mutation_advances_version_and_wakes(CoreRuntime::new().expect("runtime"), |runtime| {
-        runtime
-            .mutate_worktree(MutateWorktreeCommand {
-                kind: WorktreeMutationKind::Create,
-                repo_path: "/repo/worktree".to_string(),
-                worktree_name: "notifier-proof".to_string(),
-                force: false,
-            })
-            .map(|_| ())
-    });
-
-    assert_mutation_advances_version_and_wakes(CoreRuntime::new().expect("runtime"), |runtime| {
-        runtime
             .mutate_delegation(make_delegation_start_command(
                 "/repo/delegation",
                 "worker-001",
@@ -413,7 +532,8 @@ fn run_gc_at_uses_explicit_reference_time() {
             last_hook_event_at: None,
         },
         generated_at: now.to_rfc3339(),
-        snapshot_version: 0,
+        change_version: 0,
+        disk_format_version: 0,
         schema_version: 0,
     };
 
@@ -820,7 +940,8 @@ fn stale_dead_snapshot_for_gc_read_test() -> AppSnapshot {
             last_hook_event_at: None,
         },
         generated_at: now,
-        snapshot_version: 0,
+        change_version: 0,
+        disk_format_version: 0,
         schema_version: 0,
     }
 }
@@ -866,7 +987,8 @@ fn stale_dead_snapshot_for_gc_notify_test() -> AppSnapshot {
             last_hook_event_at: None,
         },
         generated_at: now.to_rfc3339(),
-        snapshot_version: 0,
+        change_version: 0,
+        disk_format_version: 0,
         schema_version: 0,
     }
 }
@@ -995,7 +1117,8 @@ fn snapshot_payload(sessions: Vec<SessionSummary>, last_hook_event_at: Option<St
             last_hook_event_at: None,
         },
         generated_at: now,
-        snapshot_version: 0,
+        change_version: 0,
+        disk_format_version: 0,
         schema_version: 0,
     };
     let mut value = serde_json::to_value(snapshot).expect("serialize snapshot to value");
@@ -1327,7 +1450,8 @@ mod cold_start_transcript_tests {
                 last_hook_event_at: None,
             },
             generated_at: "2099-01-01T00:00:00Z".to_string(),
-            snapshot_version: 1,
+            change_version: 0,
+            disk_format_version: 1,
             schema_version: 0,
         };
         storage.save_snapshot(&empty_snapshot).unwrap();

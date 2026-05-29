@@ -488,7 +488,7 @@ final class AppStateRuntimeSnapshotEffectTests: XCTestCase {
             ],
             delegations: [],
             runs: [],
-            snapshotVersion: 7,
+            changeVersion: 7,
         )
 
         await appState.applyRuntimeSnapshotForTesting(
@@ -859,7 +859,7 @@ final class AppStateRuntimeSnapshotEffectTests: XCTestCase {
         sessions: [RuntimeSession] = [],
         delegations: [RuntimeDelegationState],
         runs: [RuntimeRunState],
-        snapshotVersion: UInt64 = 0,
+        changeVersion: UInt64 = 0,
     ) -> RuntimeSnapshot {
         let timestamp = "2026-04-17T00:00:00Z"
         return RuntimeSnapshot(
@@ -868,7 +868,7 @@ final class AppStateRuntimeSnapshotEffectTests: XCTestCase {
                     projectId: nil,
                     workspaceId: nil,
                     projectPath: projectPath,
-                    state: "working",
+                    state: .working,
                     updatedAt: timestamp,
                     stateChangedAt: timestamp,
                     sessionId: "session-1",
@@ -883,7 +883,7 @@ final class AppStateRuntimeSnapshotEffectTests: XCTestCase {
             routingViews: [],
             delegations: delegations,
             runs: runs,
-            snapshotVersion: snapshotVersion,
+            changeVersion: changeVersion,
         )
     }
 
@@ -896,7 +896,7 @@ final class AppStateRuntimeSnapshotEffectTests: XCTestCase {
         RuntimeSession(
             sessionId: sessionId,
             pid: 1234,
-            state: state,
+            state: try! SessionState.decode(wire: state),
             cwd: cwd,
             projectId: nil,
             workspaceId: nil,
@@ -921,7 +921,7 @@ final class AppStateRuntimeSnapshotEffectTests: XCTestCase {
             worktreeName: "worker-1",
             worktreePath: "\(projectPath)-worker-1",
             sessionId: "session-1",
-            status: "active",
+            status: .working,
             startedAt: "2026-04-17T00:00:00Z",
             updatedAt: "2026-04-17T00:00:00Z",
             currentReview: nil,
@@ -934,7 +934,7 @@ final class AppStateRuntimeSnapshotEffectTests: XCTestCase {
             projectPath: projectPath,
             methodId: "checkpoint-review",
             methodName: "Checkpoint Review",
-            status: "paused",
+            status: .paused,
             sessionId: "session-1",
             delegationWorkerId: nil,
             statusMessage: nil,

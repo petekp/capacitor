@@ -4,14 +4,15 @@ use chrono::{DateTime, Duration, Utc};
 
 use crate::domain::{
     AppSnapshot, DiagnosticsSummary, HookEventType, IngestHookEventCommand,
-    IngestShellSignalCommand, MutateDelegationCommand, MutateRunCommand, MutationOutcome,
-    ProjectDelegationState, ProjectSummary, ResolveRoutingCommand, RoutingView, RunState,
-    SessionSummary, ShellSignal, ShellUnregisterCommand, SignalAuthority, StateSource,
+    IngestShellSignalCommand, MutateDelegationCommand, MutateProjectCommand, MutateRunCommand,
+    MutationOutcome, ProjectDelegationState, ProjectSummary, ResolveRoutingCommand, RoutingView,
+    RunState, SessionSummary, ShellSignal, ShellUnregisterCommand, SignalAuthority, StateSource,
 };
 use crate::observation::transcript::TranscriptDiscovery;
 
 mod event_handler;
 mod gc;
+mod project;
 mod project_state;
 mod routing;
 mod session;
@@ -102,7 +103,8 @@ impl ReducerState {
             runs: snapshot_runs,
             diagnostics,
             generated_at: _,
-            snapshot_version: _,
+            change_version: _,
+            disk_format_version: _,
             schema_version: _,
         } = snapshot;
 
@@ -279,6 +281,19 @@ impl ReducerState {
         delegation::apply_delegation_mutation(&mut self.delegations, &mut self.last_error, command)
     }
 
+    #[must_use]
+    pub(crate) fn apply_project_mutation(
+        &mut self,
+        command: MutateProjectCommand,
+    ) -> MutationOutcome {
+        project::apply_project_mutation(
+            &mut self.projects,
+            &mut self.delegations,
+            &mut self.sessions,
+            command,
+        )
+    }
+
     pub fn gc_stale_sessions(&mut self) -> bool {
         self.gc_stale_sessions_at(Utc::now())
     }
@@ -347,7 +362,10 @@ impl ReducerState {
                 last_hook_event_at: self.last_hook_event_at.clone(),
             },
             generated_at: crate::domain::now_rfc3339(),
-            snapshot_version: crate::storage::CURRENT_SNAPSHOT_SCHEMA_VERSION as u64,
+            // change_version is stamped by core_query::app_snapshot (live counter);
+            // disk_format_version is stamped by storage on save. Reduce owns neither.
+            change_version: 0,
+            disk_format_version: 0,
             schema_version: crate::domain::SCHEMA_VERSION,
         }
     }

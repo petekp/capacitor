@@ -282,13 +282,11 @@ extension AppState {
     }
 
     func getSessionState(for project: Project) -> ProjectSessionState? {
-        _ = sessionStateRevision
-        return sessionStateManager.getSessionState(for: project)
+        sessionStateManager.getSessionState(for: project)
     }
 
     func isFlashing(_ project: Project) -> SessionState? {
-        _ = sessionStateRevision
-        return sessionStateManager.isFlashing(project)
+        sessionStateManager.isFlashing(project)
     }
 
     func getProjectStatus(for project: Project) -> ProjectStatus? {
@@ -433,34 +431,12 @@ extension AppState {
         action: String,
         note: String?,
     ) async throws {
-        try await runtimeClient.mutateRun(RuntimeRunMutationRequest(
-            kind: "submit_decision",
+        try await runtimeClient.mutateRun(.submitDecision(
             projectPath: projectPath,
             runId: runID,
             checkpointId: checkpointID,
-            methodId: nil,
-            involvement: nil,
-            checkpointKind: nil,
-            checkpointTitle: nil,
-            checkpointSummary: nil,
-            checkpointBriefPath: nil,
-            checkpointManifestPath: nil,
-            checkpointMediaArtifacts: [],
-            checkpointMermaidSources: [],
-            captureUrl: nil,
             decisionAction: action,
             decisionNote: note?.isEmpty == true ? nil : note,
-            sessionId: nil,
-            delegationWorkerId: nil,
-            statusMessage: nil,
-            captureRequestId: nil,
-            clientId: nil,
-            observedCaptureUrl: nil,
-            captureFailureReason: nil,
-            completedMediaArtifacts: [],
-            ideaId: nil,
-            ideaTitle: nil,
-            ideaDescription: nil,
         ))
     }
 
@@ -472,7 +448,6 @@ extension AppState {
         projectState.orderedGroupedProjects(
             projects,
             sessionStates: sessionStateManager.sessionStates,
-            sessionStateRevision: sessionStateRevision,
         )
     }
 
@@ -514,8 +489,11 @@ extension AppState {
     }
 
     func workBatches(for project: Project) -> [WorkBatchProjection] {
-        _ = workBatchProjectionRevision
-        return workBatchAutoRouter.projections(for: project.path)
+        // Reads the router's @Observable projections cache. Because both
+        // AppState and WorkBatchAutoRouter are @Observable, view bodies that
+        // call this track the nested cache access and re-render when the router
+        // recomputes projections after a store-mutating op.
+        workBatchAutoRouter.projections(for: project.path)
     }
 
     func workBatchContextSummary(for project: Project) -> String? {
@@ -717,13 +695,9 @@ extension AppState {
                 let record = try await workBatchAutoRouter.openPreview(
                     project: project,
                     batchID: batch.id,
-                    onRecordChanged: { [weak self] _ in
-                        self?.invalidateWorkBatchProjections()
-                    },
                 )
 
                 await MainActor.run {
-                    self.invalidateWorkBatchProjections()
                     switch record.status {
                     case .readyToInspect:
                         self.uiState.toast = ToastMessage("Preview ready")

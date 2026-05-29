@@ -24,13 +24,7 @@ struct StatusChip: View {
     }
 
     private var accessibilityLabelText: String {
-        switch effectiveState {
-        case .working: "Working"
-        case .ready: "Ready"
-        case .idle: "Idle"
-        case .compacting: "Compacting"
-        case .waiting: "Waiting"
-        }
+        effectiveState.presentation.statusText
     }
 
     var body: some View {
@@ -68,13 +62,13 @@ struct StatusChipsRow: View {
         if let runState = ProjectRunVisualStateResolver.visualState(for: activeRunState).sessionState {
             return .session(runState)
         }
-        if delegationState?.status == "review_needed", delegationState?.currentReview != nil {
+        if delegationState?.status == .reviewNeeded, delegationState?.currentReview != nil {
             return .delegationReview
         }
-        if delegationState?.status == "resume_pending" {
+        if delegationState?.status == .resumePending {
             return .delegationResuming
         }
-        if delegationState?.status == "resume_failed" {
+        if delegationState?.status == .resumeFailed {
             return .delegationResumeFailed
         }
         // New Work Batch behavior: Capacitor-managed checkpoint/queue state should

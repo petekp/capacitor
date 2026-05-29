@@ -25,7 +25,6 @@ extension CoreRuntime: StartupSetupRuntime {}
 struct StartupSetupValidationHooks {
     let shouldSkipSetupValidation: () -> Bool
     let makeRuntime: () throws -> any StartupSetupRuntime
-    let startupDecision: (SetupStatus) -> StartupSetupDecision
     let writeStartupLog: (DebugLog.StartupEvent) -> Void
     let setSetupComplete: (Bool) -> Void
     let isSetupComplete: () -> Bool
@@ -39,7 +38,6 @@ struct StartupSetupValidationHooks {
                 AppLaunchOverrides.shouldSkipSetupValidation(info: Bundle.main.infoDictionary ?? [:])
             },
             makeRuntime: { try CoreRuntime() },
-            startupDecision: { SetupReadinessCoordinator.startupDecision(from: $0) },
             writeStartupLog: { DebugLog.write(startup: $0) },
             setSetupComplete: { UserDefaults.standard.set($0, forKey: "setupComplete") },
             isSetupComplete: { UserDefaults.standard.bool(forKey: "setupComplete") },
@@ -90,15 +88,21 @@ enum StartupSetupValidator {
             DebugLog.write("StartupSetupValidator: checkSetupStatus failed: \(error)")
             return
         }
-        switch hooks.startupDecision(setupStatus) {
+        // Rust owns the readiness classification (SetupStatus.readiness); Swift
+        // owns which side-effect each variant triggers.
+        switch setupStatus.readiness {
         case .ready:
             break
-        case let .showWelcome(event):
-            hooks.writeStartupLog(event)
+        case .needsUserAction(reason: .claudeMissing):
+            hooks.writeStartupLog(.claudeMissing)
             hooks.setSetupComplete(false)
             return
-        case let .attemptHookRepair(event):
-            hooks.writeStartupLog(event)
+        case let .needsUserAction(reason: .policyBlocked(reason)):
+            hooks.writeStartupLog(.hooksBlockedByPolicy(reason: reason))
+            hooks.setSetupComplete(false)
+            return
+        case let .autoRepairable(status):
+            hooks.writeStartupLog(.hooksNeedAutoRepair(status: status))
             if hooks.attemptAutoRepair(engine) {
                 hooks.writeStartupLog(.hooksAutoRepairSucceeded)
             } else {

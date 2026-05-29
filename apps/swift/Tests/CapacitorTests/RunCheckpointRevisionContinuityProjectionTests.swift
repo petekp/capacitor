@@ -251,7 +251,7 @@ final class RunCheckpointRevisionContinuityProjectionTests: XCTestCase {
             projectPath: "/tmp/project",
             methodId: "method",
             methodName: "Method",
-            status: "paused",
+            status: .paused,
             sessionId: nil,
             delegationWorkerId: nil,
             statusMessage: nil,

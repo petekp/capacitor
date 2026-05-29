@@ -411,7 +411,7 @@ final class TerminalLauncherTests: XCTestCase {
             route: RuntimeRoutingView(
                 workspaceId: "workspace-capacitor",
                 projectPath: "/Code/capacitor",
-                status: "attached",
+                status: .attached,
                 target: CoreRoutingTarget(
                     kind: "tmux_pane",
                     terminalApp: "ghostty",

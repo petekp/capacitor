@@ -276,16 +276,16 @@ final class ProjectRunVisualStateResolverTests: XCTestCase {
         let projectPath = "/tmp/core-project"
         let now = try XCTUnwrap(parseISO8601Date("2026-03-26T10:06:10Z"))
         let phases: [RuntimePhaseInstance] = [
-            RuntimePhaseInstance(id: "p1", name: "Research", status: "completed", startedAt: nil, completedAt: nil),
-            RuntimePhaseInstance(id: "p2", name: "Implementation", status: "active", startedAt: nil, completedAt: nil),
-            RuntimePhaseInstance(id: "p3", name: "Review", status: "pending", startedAt: nil, completedAt: nil),
+            RuntimePhaseInstance(id: "p1", name: "Research", status: .completed, startedAt: nil, completedAt: nil),
+            RuntimePhaseInstance(id: "p2", name: "Implementation", status: .active, startedAt: nil, completedAt: nil),
+            RuntimePhaseInstance(id: "p3", name: "Review", status: .pending, startedAt: nil, completedAt: nil),
         ]
         let run = RuntimeRunState(
             id: "run-phased",
             projectPath: projectPath,
             methodId: "shape_and_execute",
             methodName: "Shape & Execute",
-            status: "active",
+            status: .active,
             sessionId: "s1",
             delegationWorkerId: nil,
             statusMessage: "Legacy status",
@@ -402,7 +402,7 @@ final class ProjectRunVisualStateResolverTests: XCTestCase {
             projectPath: projectPath,
             methodId: "execution_only",
             methodName: "Execute",
-            status: status,
+            status: try! RunStatus.decode(wire: status),
             sessionId: "run-session-\(id)",
             delegationWorkerId: nil,
             statusMessage: statusMessage,

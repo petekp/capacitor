@@ -63,7 +63,11 @@ extension CreationStatus: Codable {
         case "completed": self = .completed
         case "failed": self = .failed
         case "cancelled": self = .cancelled
-        default: self = .pending
+        default:
+            throw DecodingError.dataCorruptedError(
+                in: container,
+                debugDescription: "Unsupported creation status: \(rawValue)",
+            )
         }
     }
 

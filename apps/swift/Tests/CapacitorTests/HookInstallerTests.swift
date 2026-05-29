@@ -5,7 +5,7 @@ final class HookInstallerTests: XCTestCase {
     func testEnsureHooksInstalledStopsWhenBinaryInstallFails() {
         let runtime = StubHookRuntime(
             installHooksResult: .success(InstallResult(success: true, message: "ok", scriptPath: nil)),
-            hookStatus: .installed(version: "1.0.0"),
+            hookStatus: .installed,
         )
 
         let message = HookInstaller.ensureHooksInstalled(
@@ -65,7 +65,7 @@ final class HookInstallerTests: XCTestCase {
     func testEnsureHooksInstalledReturnsNilOnSuccess() {
         let runtime = StubHookRuntime(
             installHooksResult: .success(InstallResult(success: true, message: "configured", scriptPath: nil)),
-            hookStatus: .installed(version: "1.0.0"),
+            hookStatus: .installed,
         )
 
         let message = HookInstaller.ensureHooksInstalled(

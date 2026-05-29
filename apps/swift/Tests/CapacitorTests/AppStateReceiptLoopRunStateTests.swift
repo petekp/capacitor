@@ -18,7 +18,7 @@ final class AppStateReceiptLoopRunStateTests: XCTestCase {
 
         XCTAssertEqual(started.status, .running)
         XCTAssertEqual(appState.receiptLoopRun(for: project)?.status, .running)
-        XCTAssertEqual(appState.receiptLoopRuntimeRun(for: project)?.status, "active")
+        XCTAssertEqual(appState.receiptLoopRuntimeRun(for: project)?.status, .active)
         XCTAssertEqual(appState.activeRun(for: idea, in: project)?.id, "receipt-run-1")
         XCTAssertEqual(appState.activeRun(for: project)?.id, "receipt-run-1")
 
@@ -30,7 +30,7 @@ final class AppStateReceiptLoopRunStateTests: XCTestCase {
 
         XCTAssertEqual(appState.receiptLoopRun(for: project)?.status, .completed)
         XCTAssertEqual(appState.receiptLoopRun(for: project)?.updatedAt, "2027-01-15T08:03:00Z")
-        XCTAssertEqual(appState.receiptLoopRuntimeRun(for: project)?.status, "completed")
+        XCTAssertEqual(appState.receiptLoopRuntimeRun(for: project)?.status, .completed)
         XCTAssertNil(appState.activeRun(for: idea, in: project))
 
         appState.recordReceiptLoopFailed(
@@ -42,7 +42,7 @@ final class AppStateReceiptLoopRunStateTests: XCTestCase {
 
         XCTAssertEqual(appState.receiptLoopRun(for: project)?.status, .failed)
         XCTAssertEqual(appState.receiptLoopRun(for: project)?.failureReason, "Claude receipt loop failed")
-        XCTAssertEqual(appState.receiptLoopRuntimeRun(for: project)?.status, "failed")
+        XCTAssertEqual(appState.receiptLoopRuntimeRun(for: project)?.status, .failed)
     }
 
     func testOlderReceiptCompletionDoesNotOverwriteNewerVisibleRun() {

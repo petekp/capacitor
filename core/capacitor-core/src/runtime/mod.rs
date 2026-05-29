@@ -6,7 +6,6 @@ pub mod error;
 pub mod ideas;
 pub mod patterns;
 pub mod projects;
-pub mod relocate;
 pub mod service;
 pub mod sessions;
 pub mod setup;

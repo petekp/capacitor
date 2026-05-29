@@ -569,7 +569,7 @@ final class WorkBatchAutoRouterTests: XCTestCase {
         } catch {
             let state = try harness.stateStore.load()
             XCTAssertEqual(state.batches.first?.status, .waiting)
-            XCTAssertEqual(state.batches.first?.currentActivitySummary, "Claude Code launch needs attention.")
+            XCTAssertEqual(state.batches.first?.attentionReason, .launchFailed)
             XCTAssertEqual(state.tasks.first(where: { $0.id == "idea-green" })?.status, .queued)
         }
     }
@@ -1412,7 +1412,7 @@ final class WorkBatchAutoRouterTests: XCTestCase {
         XCTAssertEqual(state.tasks.first?.status, .queued)
         XCTAssertEqual(state.batches.first?.status, .waiting)
         XCTAssertEqual(
-            state.batches.first?.currentActivitySummary,
+            try harness.derivedSummary(batchID: "batch-mobile"),
             "Claude Code has not picked up Adjust mobile spacing yet. Click to re-enter.",
         )
         XCTAssertEqual(
@@ -1468,7 +1468,7 @@ final class WorkBatchAutoRouterTests: XCTestCase {
 
         let state = try harness.stateStore.load()
         XCTAssertEqual(state.batches.first?.status, .waiting)
-        XCTAssertEqual(state.batches.first?.currentActivitySummary, "Claude Code launch needs attention.")
+        XCTAssertEqual(state.batches.first?.attentionReason, .launchFailed)
         XCTAssertEqual(state.tasks.first?.status, .queued)
         XCTAssertTrue(try harness.bindingStore.load().isEmpty)
     }
@@ -1890,15 +1890,22 @@ final class WorkBatchAutoRouterTests: XCTestCase {
             contextUpdatedAt: harness.now,
             deliveryGeneration: "batch-mobile:old",
         ))
-        let router = WorkBatchAutoRouter(
-            classifier: { _ in throw NSError(domain: "test", code: 1) },
-            stateStoreFactory: { _ in harness.stateStore },
-            bindingStoreFactory: { _ in harness.bindingStore },
-        )
+        func makeRouter() -> WorkBatchAutoRouter {
+            WorkBatchAutoRouter(
+                classifier: { _ in throw NSError(domain: "test", code: 1) },
+                stateStoreFactory: { _ in harness.stateStore },
+                bindingStoreFactory: { _ in harness.bindingStore },
+            )
+        }
 
-        XCTAssertTrue(router.ingestTaskClaims(projects: [harness.project], now: harness.now).isEmpty)
+        XCTAssertTrue(makeRouter().ingestTaskClaims(projects: [harness.project], now: harness.now).isEmpty)
         XCTAssertEqual(try harness.stateStore.load().tasks.first?.status, .queued)
 
+        // The router now holds a single in-memory working value as the source of
+        // truth, so an externally-applied task-status change is picked up by a
+        // freshly hydrated router (modeling a relaunch). Each phase mutates the
+        // persisted store, then a new router re-hydrates and asserts the claim
+        // guard still ignores done / needs-you claims.
         var state = try harness.stateStore.load()
         state.tasks[0].status = .done
         try harness.stateStore.save(state)
@@ -1910,13 +1917,13 @@ final class WorkBatchAutoRouterTests: XCTestCase {
             contextUpdatedAt: harness.now,
             deliveryGeneration: "batch-mobile:current",
         ))
-        XCTAssertTrue(router.ingestTaskClaims(projects: [harness.project], now: harness.now).isEmpty)
+        XCTAssertTrue(makeRouter().ingestTaskClaims(projects: [harness.project], now: harness.now).isEmpty)
         XCTAssertEqual(try harness.stateStore.load().tasks.first?.status, .done)
 
         state = try harness.stateStore.load()
         state.tasks[0].status = .needsYou
         try harness.stateStore.save(state)
-        XCTAssertTrue(router.ingestTaskClaims(projects: [harness.project], now: harness.now).isEmpty)
+        XCTAssertTrue(makeRouter().ingestTaskClaims(projects: [harness.project], now: harness.now).isEmpty)
         XCTAssertEqual(try harness.stateStore.load().tasks.first?.status, .needsYou)
     }
 
@@ -2230,7 +2237,8 @@ final class WorkBatchAutoRouterTests: XCTestCase {
         XCTAssertTrue(scripts.isEmpty)
         let state = try harness.stateStore.load()
         XCTAssertEqual(state.batches.first?.status, .waiting)
-        XCTAssertEqual(state.batches.first?.currentActivitySummary, "Multiple Claude Code sessions match this Work Batch.")
+        XCTAssertEqual(state.batches.first?.attentionReason, .duplicateCockpit(assignedProcessDuplicate: false))
+        XCTAssertEqual(try harness.derivedSummary(batchID: "batch-mobile"), "Multiple Claude Code sessions match this Work Batch.")
         XCTAssertEqual(state.tasks.first(where: { $0.id == "idea-green" })?.status, .queued)
     }
 
@@ -2279,7 +2287,8 @@ final class WorkBatchAutoRouterTests: XCTestCase {
         XCTAssertTrue(scripts.isEmpty)
         let state = try harness.stateStore.load()
         XCTAssertEqual(state.batches.first?.status, .waiting)
-        XCTAssertEqual(state.batches.first?.currentActivitySummary, "Claude Code is already open; click to re-enter.")
+        XCTAssertEqual(state.batches.first?.attentionReason, .duplicateCockpit(assignedProcessDuplicate: true))
+        XCTAssertEqual(try harness.derivedSummary(batchID: "batch-mobile"), "Claude Code is already open; click to re-enter.")
         XCTAssertEqual(state.tasks.first(where: { $0.id == "idea-green" })?.status, .queued)
     }
 
@@ -2340,7 +2349,7 @@ final class WorkBatchAutoRouterTests: XCTestCase {
         XCTAssertTrue(scripts.isEmpty)
         let updatedState = try harness.stateStore.load()
         XCTAssertEqual(updatedState.batches.first?.status, .waiting)
-        XCTAssertEqual(updatedState.batches.first?.currentActivitySummary, "Checkpoint ready: Which green token should I use?")
+        XCTAssertEqual(try harness.derivedSummary(batchID: "batch-mobile"), "Checkpoint ready: Which green token should I use?")
         XCTAssertEqual(updatedState.tasks.first(where: { $0.id == "idea-old" })?.status, .needsYou)
         XCTAssertEqual(updatedState.tasks.first(where: { $0.id == "idea-green" })?.status, .queued)
         XCTAssertEqual(updatedState.checkpoints.first?.status, .pending)
@@ -3241,6 +3250,17 @@ private final class RouterHarness {
         )
     }
 
+    /// Projects the persisted state through the single presentation derivation
+    /// the home UI consumes. The reducer now records structural facts (status +
+    /// attentionReason); the displayed summary is asserted via the projection.
+    func derivedSummary(batchID: String) throws -> String? {
+        let state = try stateStore.load()
+        let bindings = try bindingStore.load()
+        return WorkBatchProjectionBuilder.build(state: state, bindings: bindings)
+            .first(where: { $0.id == batchID })?
+            .currentActivitySummary
+    }
+
     func worktreeService(expectedName: String) -> WorktreeService {
         WorktreeService(fileManager: fileManager) { [projectRoot, fileManager] arguments, cwd in
             guard arguments == [
@@ -3344,7 +3364,7 @@ private final class RouterHarness {
         RuntimeSession(
             sessionId: sessionId,
             pid: 1234,
-            state: state,
+            state: try! SessionState.decode(wire: state),
             cwd: cwd,
             projectId: nil,
             workspaceId: nil,

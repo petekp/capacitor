@@ -826,7 +826,10 @@ final class SessionStateManager {
     }
 
     private nonisolated func normalizedRuntimeState(_ state: RuntimeProjectState, pid: UInt32?, isAlive: Bool?, now: Date, processLiveness: ProcessLivenessChecker) -> SessionState {
-        var mappedState = mapRuntimeState(state.state)
+        // `state.state` is decoded once at the RuntimeClient boundary into the
+        // typed `SessionState` enum, so no string re-parsing (and no lossy
+        // default) happens here.
+        var mappedState = state.state
         // Use Rust-computed is_alive (shell corroboration) as the primary liveness signal.
         // Falls back to Swift-side PID check + timestamp staleness when is_alive is nil
         // (runtime service path or pre-migration snapshots).
@@ -844,23 +847,6 @@ final class SessionStateManager {
             }
         }
         return mappedState
-    }
-
-    private nonisolated func mapRuntimeState(_ state: String) -> SessionState {
-        switch state.lowercased() {
-        case "working":
-            .working
-        case "ready":
-            .ready
-        case "compacting":
-            .compacting
-        case "waiting":
-            .waiting
-        case "idle":
-            .idle
-        default:
-            .idle
-        }
     }
 
     func clearRuntimeProjectStates() {
@@ -882,6 +868,11 @@ final class SessionStateManager {
             latestSessionIds = states.compactMapValues(\.sessionId)
             pruneCachedStates()
             checkForStateChanges()
+        }
+
+        /// Test-only helper to drive the flashing projection deterministically.
+        func setFlashingProjectsForTesting(_ flashing: [String: SessionState]) {
+            flashingProjects = flashing
         }
     #endif
 }

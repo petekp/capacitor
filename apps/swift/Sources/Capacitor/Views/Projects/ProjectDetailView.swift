@@ -266,7 +266,7 @@ struct ProjectDetailView: View {
         }
 
         if let run = appState.activeRun(for: idea, in: project),
-           run.status == "paused",
+           run.status == .paused,
            run.activeCheckpoint != nil
         {
             return true
@@ -282,7 +282,7 @@ struct ProjectDetailView: View {
         else {
             return false
         }
-        return delegation.status == "review_needed" || delegation.status == "resume_failed"
+        return delegation.status == .reviewNeeded || delegation.status == .resumeFailed
     }
 
     private func openReview(for idea: Idea) {
@@ -294,7 +294,7 @@ struct ProjectDetailView: View {
         }
 
         if let run = appState.activeRun(for: idea, in: project),
-           run.status == "paused",
+           run.status == .paused,
            run.activeCheckpoint != nil
         {
             appState.showRunCheckpointReview(for: run)
@@ -314,10 +314,10 @@ struct ProjectDetailView: View {
         visibleRun: RuntimeRunState?,
     ) -> RuntimeRunState? {
         if let visibleRun {
-            return visibleRun.status == "completed" ? visibleRun : nil
+            return visibleRun.status == .completed ? visibleRun : nil
         }
 
-        if timelineRun?.status == "completed" {
+        if timelineRun?.status == .completed {
             return timelineRun
         }
 

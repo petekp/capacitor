@@ -42,8 +42,6 @@ class AppState {
     @ObservationIgnored var longPollTask: _Concurrency.Task<Void, Never>?
     @ObservationIgnored var runtimeBootstrapTask: _Concurrency.Task<Void, Never>?
     @ObservationIgnored var runtimeSnapshotTask: _Concurrency.Task<Void, Never>?
-    private(set) var sessionStateRevision = 0
-    private(set) var workBatchProjectionRevision = 0
     @ObservationIgnored var didShutdownForTesting = false
     #if DEBUG
         @ObservationIgnored var runtimeBootstrapTraceForTesting: [String] = []
@@ -248,10 +246,9 @@ class AppState {
             },
         )
 
-        sessionStateManager.onVisualStateChanged = { [weak self] in
-            guard let self else { return }
-            sessionStateRevision &+= 1
-        }
+        // Session-state and flashing changes now drive view re-render directly
+        // via @Observable tracking of SessionStateManager.sessionStates /
+        // .flashingProjects, so no manual revision-counter bridge is needed.
         terminalLauncher.onActivationResult = { [weak self] result in
             guard let self, !result.success else { return }
             uiState.toast = ToastMessage(
@@ -273,10 +270,6 @@ class AppState {
         longPollTask?.cancel()
         runtimeBootstrapTask?.cancel()
         runtimeSnapshotTask?.cancel()
-    }
-
-    func invalidateWorkBatchProjections() {
-        workBatchProjectionRevision &+= 1
     }
 }
 

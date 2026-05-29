@@ -479,7 +479,7 @@ final class AppStateRunTests: XCTestCase {
                     projectId: nil,
                     workspaceId: nil,
                     projectPath: projectPath,
-                    state: "working",
+                    state: .working,
                     updatedAt: timestamp,
                     stateChangedAt: timestamp,
                     sessionId: "session-1",
@@ -494,7 +494,7 @@ final class AppStateRunTests: XCTestCase {
             routingViews: [],
             delegations: [],
             runs: runs,
-            snapshotVersion: 0,
+            changeVersion: 0,
         )
     }
 
@@ -513,7 +513,7 @@ final class AppStateRunTests: XCTestCase {
             projectPath: projectPath,
             methodId: "method-1",
             methodName: "Method",
-            status: status,
+            status: try! RunStatus.decode(wire: status),
             sessionId: "session-1",
             delegationWorkerId: nil,
             statusMessage: "Drafting packet",
