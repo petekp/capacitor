@@ -6,15 +6,13 @@
 
 mod common;
 
-use capacitor_core::domain::{
-    CheckpointKind, MermaidSource, MutateRunCommand, RunMutationKind, RunStatus,
-};
+use capacitor_core::domain::{CheckpointKind, MermaidSource, RunStatus};
 use capacitor_core::CoreRuntime;
-use common::{active_checkpoint_id, mutate_run as mutate};
+use common::{active_checkpoint_id, mutate_run as mutate, RunCommandBuilder, RunMutationKind};
 
 const PROJECT: &str = "/test/idea-to-ship";
 
-fn base_cmd(run_id: &str) -> MutateRunCommand {
+fn base_cmd(run_id: &str) -> RunCommandBuilder {
     common::run_kernel_base_cmd(PROJECT, run_id)
 }
 

@@ -4,11 +4,164 @@ use std::io::Read;
 use std::time::{Duration, Instant};
 
 use capacitor_core::domain::{
-    HookEventType, IngestHookEventCommand, MutateRunCommand, RunMutationKind,
+    CheckpointDecisionRelay, CheckpointKind, HookEventType, IngestHookEventCommand,
+    InvolvementLevel, MediaArtifact, MermaidSource, MutateRunCommand,
+    RunMutationKind as RealRunMutationKind,
 };
 use capacitor_core::CoreRuntime;
 
 pub mod fixtures;
+
+/// Test-only discriminant for run mutations.
+///
+/// Production code carries the per-kind payload inside
+/// [`capacitor_core::domain::RunMutationKind`] (a sum type). The run-kernel
+/// integration tests historically build a flat [`RunCommandBuilder`], set
+/// individual fields, then pick the kind at `mutate(...)` time. This bare
+/// discriminant preserves that ergonomic without re-spelling the payload at
+/// every call site; `RunCommandBuilder::into_command` projects the flat fields
+/// into the matching real variant.
+///
+/// Re-exported as `RunMutationKind` so existing `RunMutationKind::Create` call
+/// sites keep compiling.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RunMutationKind {
+    Create,
+    Start,
+    Heartbeat,
+    AdvancePhase,
+    EmitCheckpoint,
+    SubmitDecision,
+    AttachSession,
+    DetachSession,
+    CaptureClaim,
+    CaptureFailed,
+    CaptureComplete,
+    Pause,
+    Resume,
+    Complete,
+    Fail,
+    Cancel,
+}
+
+/// Flat run-mutation builder used by the run-kernel integration tests.
+///
+/// Mirrors the pre-refactor flat `MutateRunCommand` field set so existing test
+/// bodies (`cmd.checkpoint_kind = Some(..)`, `cmd.session_id = Some(..)`, …)
+/// keep working. [`RunCommandBuilder::into_command`] projects these flat fields
+/// into the real sum-type variant selected by [`RunMutationKind`].
+#[derive(Debug, Clone, Default)]
+pub struct RunCommandBuilder {
+    pub project_path: String,
+    pub run_id: String,
+    pub method_id: Option<String>,
+    pub involvement: Option<InvolvementLevel>,
+    pub checkpoint_kind: Option<CheckpointKind>,
+    pub checkpoint_title: Option<String>,
+    pub checkpoint_summary: Option<String>,
+    pub checkpoint_brief_path: Option<String>,
+    pub checkpoint_manifest_path: Option<String>,
+    pub checkpoint_media_artifacts: Vec<MediaArtifact>,
+    pub checkpoint_mermaid_sources: Vec<MermaidSource>,
+    pub checkpoint_decision_relay: Option<CheckpointDecisionRelay>,
+    pub capture_url: Option<String>,
+    pub checkpoint_id: Option<String>,
+    pub capture_request_id: Option<String>,
+    pub client_id: Option<String>,
+    pub observed_capture_url: Option<String>,
+    pub capture_failure_reason: Option<String>,
+    pub decision_action: Option<String>,
+    pub decision_note: Option<String>,
+    pub session_id: Option<String>,
+    pub delegation_worker_id: Option<String>,
+    pub status_message: Option<String>,
+    pub idea_id: Option<String>,
+    pub idea_title: Option<String>,
+    pub idea_description: Option<String>,
+    pub completed_media_artifacts: Vec<MediaArtifact>,
+}
+
+impl RunCommandBuilder {
+    /// Project the flat builder into the real [`MutateRunCommand`] sum type using
+    /// `kind` to select the variant and which flat fields to carry.
+    pub fn into_command(self, kind: RunMutationKind) -> MutateRunCommand {
+        let payload = match kind {
+            RunMutationKind::Create => RealRunMutationKind::Create {
+                method_id: self.method_id,
+                involvement: self.involvement,
+                delegation_worker_id: self.delegation_worker_id,
+                idea_id: self.idea_id,
+                idea_title: self.idea_title,
+                idea_description: self.idea_description,
+            },
+            RunMutationKind::Start => RealRunMutationKind::Start {
+                status_message: self.status_message,
+            },
+            RunMutationKind::Heartbeat => RealRunMutationKind::Heartbeat {
+                status_message: self.status_message,
+            },
+            RunMutationKind::AdvancePhase => RealRunMutationKind::AdvancePhase,
+            RunMutationKind::EmitCheckpoint => RealRunMutationKind::EmitCheckpoint {
+                checkpoint_kind: self.checkpoint_kind,
+                checkpoint_title: self.checkpoint_title,
+                checkpoint_summary: self.checkpoint_summary,
+                checkpoint_brief_path: self.checkpoint_brief_path,
+                checkpoint_manifest_path: self.checkpoint_manifest_path,
+                checkpoint_media_artifacts: self.checkpoint_media_artifacts,
+                checkpoint_mermaid_sources: self.checkpoint_mermaid_sources,
+                checkpoint_decision_relay: self.checkpoint_decision_relay,
+                capture_url: self.capture_url,
+                checkpoint_id: self.checkpoint_id,
+            },
+            RunMutationKind::SubmitDecision => RealRunMutationKind::SubmitDecision {
+                checkpoint_id: self.checkpoint_id,
+                decision_action: self.decision_action,
+                decision_note: self.decision_note,
+            },
+            RunMutationKind::AttachSession => RealRunMutationKind::AttachSession {
+                session_id: self.session_id,
+                delegation_worker_id: self.delegation_worker_id,
+            },
+            RunMutationKind::DetachSession => RealRunMutationKind::DetachSession,
+            RunMutationKind::CaptureClaim => RealRunMutationKind::CaptureClaim {
+                checkpoint_id: self.checkpoint_id,
+                capture_request_id: self.capture_request_id,
+                client_id: self.client_id,
+                observed_capture_url: self.observed_capture_url,
+            },
+            RunMutationKind::CaptureFailed => RealRunMutationKind::CaptureFailed {
+                checkpoint_id: self.checkpoint_id,
+                capture_request_id: self.capture_request_id,
+                capture_failure_reason: self.capture_failure_reason,
+            },
+            RunMutationKind::CaptureComplete => RealRunMutationKind::CaptureComplete {
+                checkpoint_id: self.checkpoint_id,
+                capture_request_id: self.capture_request_id,
+                completed_media_artifacts: self.completed_media_artifacts,
+            },
+            RunMutationKind::Pause => RealRunMutationKind::Pause {
+                status_message: self.status_message,
+            },
+            RunMutationKind::Resume => RealRunMutationKind::Resume {
+                status_message: self.status_message,
+            },
+            RunMutationKind::Complete => RealRunMutationKind::Complete {
+                status_message: self.status_message,
+            },
+            RunMutationKind::Fail => RealRunMutationKind::Fail {
+                status_message: self.status_message,
+            },
+            RunMutationKind::Cancel => RealRunMutationKind::Cancel {
+                status_message: self.status_message,
+            },
+        };
+        MutateRunCommand {
+            project_path: self.project_path,
+            run_id: self.run_id,
+            kind: payload,
+        }
+    }
+}
 
 pub fn valid_hook_event_command(event_type: HookEventType) -> IngestHookEventCommand {
     IngestHookEventCommand {
@@ -87,36 +240,11 @@ pub fn read_http_request(stream: &mut std::net::TcpStream) -> String {
     String::from_utf8(request).expect("request should be valid utf-8")
 }
 
-pub fn run_kernel_base_cmd(project_path: &str, run_id: &str) -> MutateRunCommand {
-    MutateRunCommand {
-        kind: RunMutationKind::Create,
+pub fn run_kernel_base_cmd(project_path: &str, run_id: &str) -> RunCommandBuilder {
+    RunCommandBuilder {
         project_path: project_path.to_string(),
         run_id: run_id.to_string(),
-        method_id: None,
-        involvement: None,
-        checkpoint_kind: None,
-        checkpoint_title: None,
-        checkpoint_summary: None,
-        checkpoint_brief_path: None,
-        checkpoint_manifest_path: None,
-        checkpoint_media_artifacts: vec![],
-        checkpoint_mermaid_sources: vec![],
-        checkpoint_decision_relay: None,
-        capture_url: None,
-        checkpoint_id: None,
-        capture_request_id: None,
-        client_id: None,
-        observed_capture_url: None,
-        capture_failure_reason: None,
-        decision_action: None,
-        decision_note: None,
-        session_id: None,
-        delegation_worker_id: None,
-        status_message: None,
-        idea_id: None,
-        idea_title: None,
-        idea_description: None,
-        completed_media_artifacts: vec![],
+        ..RunCommandBuilder::default()
     }
 }
 
@@ -124,7 +252,7 @@ pub fn run_kernel_create_cmd(
     project_path: &str,
     run_id: &str,
     method_id: &str,
-) -> MutateRunCommand {
+) -> RunCommandBuilder {
     let mut command = run_kernel_base_cmd(project_path, run_id);
     command.method_id = Some(method_id.to_string());
     command
@@ -132,12 +260,11 @@ pub fn run_kernel_create_cmd(
 
 pub fn mutate_run(
     runtime: &CoreRuntime,
-    mut command: MutateRunCommand,
+    command: RunCommandBuilder,
     kind: RunMutationKind,
 ) -> capacitor_core::domain::MutationOutcome {
-    command.kind = kind;
     runtime
-        .mutate_run(command)
+        .mutate_run(command.into_command(kind))
         .expect("mutation should not error")
 }
 

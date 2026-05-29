@@ -3,7 +3,7 @@ use std::sync::atomic::Ordering;
 use capacitor_core::{
     domain::{
         IngestHookEventCommand, IngestShellSignalCommand, MutateDelegationCommand,
-        MutateRunCommand, ResolveRoutingCommand, RunMutationKind, ShellUnregisterCommand,
+        MutateRunCommand, ResolveRoutingCommand, ShellUnregisterCommand,
     },
     runtime::service::RuntimeServiceBootstrap,
 };
@@ -523,7 +523,7 @@ pub(super) fn handle_runtime_mutate_run(
         }
     };
 
-    let outcome = if command.kind == RunMutationKind::SubmitDecision {
+    let outcome = if command.kind.is_submit_decision() {
         let relay = match runtime.checkpoint_decision_relay_for(&command) {
             Ok(relay) => relay,
             Err(error) => {

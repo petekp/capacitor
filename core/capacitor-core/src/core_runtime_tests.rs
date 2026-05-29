@@ -292,15 +292,25 @@ fn mutate_run_with_commit_rolls_back_accepted_mutation_when_commit_fails() {
         .expect("create run");
 
     let mut attach = make_run_create_command("run-commit", "/repo/run");
-    attach.kind = RunMutationKind::AttachSession;
-    attach.session_id = Some("session-commit".to_string());
+    attach.kind = RunMutationKind::AttachSession {
+        session_id: Some("session-commit".to_string()),
+        delegation_worker_id: None,
+    };
     runtime.mutate_run(attach).expect("attach session");
 
     let mut emit = make_run_create_command("run-commit", "/repo/run");
-    emit.kind = RunMutationKind::EmitCheckpoint;
-    emit.checkpoint_id = Some("checkpoint-commit".to_string());
-    emit.checkpoint_kind = Some(CheckpointKind::ImplementationMilestone);
-    emit.checkpoint_title = Some("Commit checkpoint".to_string());
+    emit.kind = RunMutationKind::EmitCheckpoint {
+        checkpoint_kind: Some(CheckpointKind::ImplementationMilestone),
+        checkpoint_title: Some("Commit checkpoint".to_string()),
+        checkpoint_summary: None,
+        checkpoint_brief_path: None,
+        checkpoint_manifest_path: None,
+        checkpoint_media_artifacts: vec![],
+        checkpoint_mermaid_sources: vec![],
+        checkpoint_decision_relay: None,
+        capture_url: None,
+        checkpoint_id: Some("checkpoint-commit".to_string()),
+    };
     runtime.mutate_run(emit).expect("emit checkpoint");
 
     // Pin the no-bump-on-rollback contract: try_commit must not advance the change
@@ -312,9 +322,11 @@ fn mutate_run_with_commit_rolls_back_accepted_mutation_when_commit_fails() {
         .change_version;
 
     let mut submit = make_run_create_command("run-commit", "/repo/run");
-    submit.kind = RunMutationKind::SubmitDecision;
-    submit.checkpoint_id = Some("checkpoint-commit".to_string());
-    submit.decision_action = Some("approve".to_string());
+    submit.kind = RunMutationKind::SubmitDecision {
+        checkpoint_id: Some("checkpoint-commit".to_string()),
+        decision_action: Some("approve".to_string()),
+        decision_note: None,
+    };
 
     let outcome = runtime
         .mutate_run_with_commit(submit, || Err("relay write failed".to_string()))
@@ -1049,34 +1061,16 @@ fn make_delegation_start_command(project_path: &str, worker_id: &str) -> MutateD
 
 fn make_run_create_command(run_id: &str, project_path: &str) -> MutateRunCommand {
     MutateRunCommand {
-        kind: RunMutationKind::Create,
         project_path: project_path.to_string(),
         run_id: run_id.to_string(),
-        method_id: Some("execution_only".to_string()),
-        involvement: None,
-        checkpoint_kind: None,
-        checkpoint_title: None,
-        checkpoint_summary: None,
-        checkpoint_brief_path: None,
-        checkpoint_manifest_path: None,
-        checkpoint_media_artifacts: vec![],
-        checkpoint_mermaid_sources: vec![],
-        checkpoint_decision_relay: None,
-        capture_url: None,
-        checkpoint_id: None,
-        capture_request_id: None,
-        client_id: None,
-        observed_capture_url: None,
-        capture_failure_reason: None,
-        decision_action: None,
-        decision_note: None,
-        session_id: None,
-        delegation_worker_id: None,
-        status_message: None,
-        idea_id: None,
-        idea_title: None,
-        idea_description: None,
-        completed_media_artifacts: vec![],
+        kind: RunMutationKind::Create {
+            method_id: Some("execution_only".to_string()),
+            involvement: None,
+            delegation_worker_id: None,
+            idea_id: None,
+            idea_title: None,
+            idea_description: None,
+        },
     }
 }
 

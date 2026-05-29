@@ -10,8 +10,9 @@ use chrono::{DateTime, Duration, Utc};
 use super::utils::parse_rfc3339;
 use crate::domain::{
     method_registry, now_rfc3339, ActiveCheckpoint, CaptureClaim, CaptureStatus,
-    CheckpointDecision, CheckpointStatus, MutateRunCommand, MutationOutcome, PhaseInstance,
-    PhaseStatus, RunMutationKind, RunState, RunStatus,
+    CheckpointDecision, CheckpointDecisionRelay, CheckpointKind, CheckpointStatus,
+    InvolvementLevel, MediaArtifact, MermaidSource, MutateRunCommand, MutationOutcome,
+    PhaseInstance, PhaseStatus, RunMutationKind, RunState, RunStatus,
 };
 
 const TERMINAL_RUN_RETENTION: Duration = Duration::hours(24);
@@ -36,32 +37,145 @@ pub(crate) fn apply_run_mutation(
     let key = run_key(&project_path, &run_id);
 
     match command.kind {
-        RunMutationKind::Create => handle_create(runs, &key, &project_path, &run_id, &command),
-        RunMutationKind::Start => handle_start(runs, &key, &command),
-        RunMutationKind::Heartbeat => handle_heartbeat(runs, &key, &command),
+        RunMutationKind::Create {
+            method_id,
+            involvement,
+            delegation_worker_id,
+            idea_id,
+            idea_title,
+            idea_description,
+        } => handle_create(
+            runs,
+            &key,
+            &project_path,
+            &run_id,
+            method_id.as_deref(),
+            involvement,
+            delegation_worker_id,
+            idea_id,
+            idea_title,
+            idea_description,
+        ),
+        RunMutationKind::Start { status_message } => {
+            handle_start(runs, &key, status_message.as_deref())
+        }
+        RunMutationKind::Heartbeat { status_message } => {
+            handle_heartbeat(runs, &key, status_message.as_deref())
+        }
         RunMutationKind::AdvancePhase => handle_advance_phase(runs, &key),
-        RunMutationKind::EmitCheckpoint => handle_emit_checkpoint(runs, &key, &command),
-        RunMutationKind::SubmitDecision => handle_submit_decision(runs, &key, &command),
-        RunMutationKind::CaptureClaim => handle_capture_claim(runs, &key, &command),
-        RunMutationKind::CaptureFailed => handle_capture_failed(runs, &key, &command),
-        RunMutationKind::CaptureComplete => handle_capture_complete(runs, &key, &command),
-        RunMutationKind::AttachSession => handle_attach_session(runs, &key, &command),
+        RunMutationKind::EmitCheckpoint {
+            checkpoint_kind,
+            checkpoint_title,
+            checkpoint_summary,
+            checkpoint_brief_path,
+            checkpoint_manifest_path,
+            checkpoint_media_artifacts,
+            checkpoint_mermaid_sources,
+            checkpoint_decision_relay,
+            capture_url,
+            checkpoint_id,
+        } => handle_emit_checkpoint(
+            runs,
+            &key,
+            EmitCheckpointArgs {
+                checkpoint_kind,
+                checkpoint_title,
+                checkpoint_summary,
+                checkpoint_brief_path,
+                checkpoint_manifest_path,
+                checkpoint_media_artifacts,
+                checkpoint_mermaid_sources,
+                checkpoint_decision_relay,
+                capture_url,
+                checkpoint_id,
+            },
+        ),
+        RunMutationKind::SubmitDecision {
+            checkpoint_id,
+            decision_action,
+            decision_note,
+        } => handle_submit_decision(
+            runs,
+            &key,
+            checkpoint_id.as_deref(),
+            decision_action.as_deref(),
+            decision_note,
+        ),
+        RunMutationKind::CaptureClaim {
+            checkpoint_id,
+            capture_request_id,
+            client_id,
+            observed_capture_url,
+        } => handle_capture_claim(
+            runs,
+            &key,
+            checkpoint_id.as_deref(),
+            capture_request_id.as_deref(),
+            client_id.as_deref(),
+            observed_capture_url.as_deref(),
+        ),
+        RunMutationKind::CaptureFailed {
+            checkpoint_id,
+            capture_request_id,
+            capture_failure_reason,
+        } => handle_capture_failed(
+            runs,
+            &key,
+            checkpoint_id.as_deref(),
+            capture_request_id.as_deref(),
+            capture_failure_reason.as_deref(),
+        ),
+        RunMutationKind::CaptureComplete {
+            checkpoint_id,
+            capture_request_id,
+            completed_media_artifacts,
+        } => handle_capture_complete(
+            runs,
+            &key,
+            checkpoint_id.as_deref(),
+            capture_request_id.as_deref(),
+            completed_media_artifacts,
+        ),
+        RunMutationKind::AttachSession {
+            session_id,
+            delegation_worker_id,
+        } => handle_attach_session(runs, &key, session_id, delegation_worker_id),
         RunMutationKind::DetachSession => handle_detach_session(runs, &key),
-        RunMutationKind::Pause => {
-            handle_status_transition(runs, &key, RunStatus::Paused, &command, "pause")
-        }
-        RunMutationKind::Resume => {
-            handle_status_transition(runs, &key, RunStatus::Active, &command, "resume")
-        }
-        RunMutationKind::Complete => {
-            handle_status_transition(runs, &key, RunStatus::Completed, &command, "complete")
-        }
-        RunMutationKind::Fail => {
-            handle_status_transition(runs, &key, RunStatus::Failed, &command, "fail")
-        }
-        RunMutationKind::Cancel => {
-            handle_status_transition(runs, &key, RunStatus::Cancelled, &command, "cancel")
-        }
+        RunMutationKind::Pause { status_message } => handle_status_transition(
+            runs,
+            &key,
+            RunStatus::Paused,
+            status_message.as_deref(),
+            "pause",
+        ),
+        RunMutationKind::Resume { status_message } => handle_status_transition(
+            runs,
+            &key,
+            RunStatus::Active,
+            status_message.as_deref(),
+            "resume",
+        ),
+        RunMutationKind::Complete { status_message } => handle_status_transition(
+            runs,
+            &key,
+            RunStatus::Completed,
+            status_message.as_deref(),
+            "complete",
+        ),
+        RunMutationKind::Fail { status_message } => handle_status_transition(
+            runs,
+            &key,
+            RunStatus::Failed,
+            status_message.as_deref(),
+            "fail",
+        ),
+        RunMutationKind::Cancel { status_message } => handle_status_transition(
+            runs,
+            &key,
+            RunStatus::Cancelled,
+            status_message.as_deref(),
+            "cancel",
+        ),
     }
 }
 
@@ -89,18 +203,24 @@ pub(crate) fn cleanup_runs_at(runs: &mut BTreeMap<String, RunState>, now: DateTi
 // Handlers
 // ---------------------------------------------------------------------------
 
+#[allow(clippy::too_many_arguments)]
 fn handle_create(
     runs: &mut BTreeMap<String, RunState>,
     key: &str,
     project_path: &str,
     run_id: &str,
-    command: &MutateRunCommand,
+    method_id: Option<&str>,
+    involvement: Option<InvolvementLevel>,
+    delegation_worker_id: Option<String>,
+    idea_id: Option<String>,
+    idea_title: Option<String>,
+    idea_description: Option<String>,
 ) -> MutationOutcome {
     if runs.contains_key(key) {
         return reject("run already exists");
     }
 
-    let method_id = match &command.method_id {
+    let method_id = match method_id {
         Some(id) if !id.trim().is_empty() => id.trim().to_string(),
         _ => return reject("missing method_id for create"),
     };
@@ -110,7 +230,7 @@ fn handle_create(
         None => return reject(&format!("unknown method: {method_id}")),
     };
 
-    let involvement = command.involvement.unwrap_or(method.default_involvement);
+    let involvement = involvement.unwrap_or(method.default_involvement);
 
     let phases: Vec<PhaseInstance> = method
         .phases
@@ -133,11 +253,11 @@ fn handle_create(
         past_checkpoints: Vec::new(),
         next_checkpoint_history_ordinal: 0,
         session_id: None,
-        delegation_worker_id: command.delegation_worker_id.clone(),
+        delegation_worker_id,
         status_message: None,
-        idea_id: command.idea_id.clone(),
-        idea_title: command.idea_title.clone(),
-        idea_description: command.idea_description.clone(),
+        idea_id,
+        idea_title,
+        idea_description,
         created_at: now.clone(),
         updated_at: now,
     };
@@ -149,7 +269,7 @@ fn handle_create(
 fn handle_start(
     runs: &mut BTreeMap<String, RunState>,
     key: &str,
-    command: &MutateRunCommand,
+    status_message: Option<&str>,
 ) -> MutationOutcome {
     let run = match runs.get_mut(key) {
         Some(r) => r,
@@ -162,7 +282,7 @@ fn handle_start(
 
     // Idempotent: if already started, just update the message and timestamp.
     if run.status != RunStatus::Created {
-        if let Some(msg) = normalized_optional_text(command.status_message.as_deref()) {
+        if let Some(msg) = normalized_optional_text(status_message) {
             run.status_message = Some(msg);
         }
         run.updated_at = now_rfc3339();
@@ -175,7 +295,7 @@ fn handle_start(
         phase.status = PhaseStatus::Active;
         phase.started_at = Some(now_rfc3339());
     }
-    run.status_message = normalized_optional_text(command.status_message.as_deref());
+    run.status_message = normalized_optional_text(status_message);
     run.updated_at = now_rfc3339();
     ok("run started")
 }
@@ -183,7 +303,7 @@ fn handle_start(
 fn handle_heartbeat(
     runs: &mut BTreeMap<String, RunState>,
     key: &str,
-    command: &MutateRunCommand,
+    status_message: Option<&str>,
 ) -> MutationOutcome {
     let run = match runs.get_mut(key) {
         Some(r) => r,
@@ -194,7 +314,7 @@ fn handle_heartbeat(
         return reject("run is in terminal state");
     }
 
-    if let Some(msg) = normalized_optional_text(command.status_message.as_deref()) {
+    if let Some(msg) = normalized_optional_text(status_message) {
         run.status_message = Some(msg);
     }
     run.updated_at = now_rfc3339();
@@ -246,10 +366,24 @@ fn handle_advance_phase(runs: &mut BTreeMap<String, RunState>, key: &str) -> Mut
     ok("advanced to next phase")
 }
 
+/// Payload for `EmitCheckpoint`, destructured from the `RunMutationKind` variant.
+struct EmitCheckpointArgs {
+    checkpoint_kind: Option<CheckpointKind>,
+    checkpoint_title: Option<String>,
+    checkpoint_summary: Option<String>,
+    checkpoint_brief_path: Option<String>,
+    checkpoint_manifest_path: Option<String>,
+    checkpoint_media_artifacts: Vec<MediaArtifact>,
+    checkpoint_mermaid_sources: Vec<MermaidSource>,
+    checkpoint_decision_relay: Option<CheckpointDecisionRelay>,
+    capture_url: Option<String>,
+    checkpoint_id: Option<String>,
+}
+
 fn handle_emit_checkpoint(
     runs: &mut BTreeMap<String, RunState>,
     key: &str,
-    command: &MutateRunCommand,
+    args: EmitCheckpointArgs,
 ) -> MutationOutcome {
     let run = match runs.get_mut(key) {
         Some(r) => r,
@@ -260,18 +394,18 @@ fn handle_emit_checkpoint(
         return reject("run is in terminal state");
     }
 
-    let checkpoint_kind = match &command.checkpoint_kind {
-        Some(k) => k.clone(),
+    let checkpoint_kind = match args.checkpoint_kind {
+        Some(k) => k,
         None => return reject("missing checkpoint_kind"),
     };
 
-    let title = command
+    let title = args
         .checkpoint_title
         .as_deref()
         .unwrap_or("Checkpoint")
         .to_string();
 
-    let checkpoint_id = command
+    let checkpoint_id = args
         .checkpoint_id
         .as_deref()
         .map(str::trim)
@@ -288,7 +422,7 @@ fn handle_emit_checkpoint(
             .unwrap_or(false)
             && active_checkpoint.kind == checkpoint_kind
             && active_checkpoint.title == title
-            && active_checkpoint.manifest_path == command.checkpoint_manifest_path;
+            && active_checkpoint.manifest_path == args.checkpoint_manifest_path;
 
         if same_checkpoint {
             return ok("checkpoint already active");
@@ -302,7 +436,7 @@ fn handle_emit_checkpoint(
         .map(ToOwned::to_owned)
         .unwrap_or_else(|| format!("{}:{}:ckpt-{}", run.id, phase_id, now.replace(':', "-")));
 
-    let capture_url = normalized_optional_text(command.capture_url.as_deref());
+    let capture_url = normalized_optional_text(args.capture_url.as_deref());
     let capture_status = if capture_url.is_some() {
         CaptureStatus::Pending
     } else {
@@ -318,15 +452,15 @@ fn handle_emit_checkpoint(
         kind: checkpoint_kind,
         status: CheckpointStatus::Active,
         title,
-        summary: command.checkpoint_summary.clone(),
-        brief_path: command.checkpoint_brief_path.clone(),
-        manifest_path: command.checkpoint_manifest_path.clone(),
-        media_artifacts: command.checkpoint_media_artifacts.clone(),
-        mermaid_sources: command.checkpoint_mermaid_sources.clone(),
+        summary: args.checkpoint_summary,
+        brief_path: args.checkpoint_brief_path,
+        manifest_path: args.checkpoint_manifest_path,
+        media_artifacts: args.checkpoint_media_artifacts,
+        mermaid_sources: args.checkpoint_mermaid_sources,
         capture_status,
         capture_url,
         capture_claim: None,
-        decision_relay: command.checkpoint_decision_relay,
+        decision_relay: args.checkpoint_decision_relay,
         decision: None,
         created_at: now.clone(),
         decided_at: None,
@@ -340,7 +474,10 @@ fn handle_emit_checkpoint(
 fn handle_capture_claim(
     runs: &mut BTreeMap<String, RunState>,
     key: &str,
-    command: &MutateRunCommand,
+    checkpoint_id: Option<&str>,
+    capture_request_id: Option<&str>,
+    client_id: Option<&str>,
+    observed_capture_url: Option<&str>,
 ) -> MutationOutcome {
     let run = match runs.get_mut(key) {
         Some(r) => r,
@@ -351,20 +488,20 @@ fn handle_capture_claim(
         return reject("run is not paused");
     }
 
-    let checkpoint_id = match require_checkpoint_id(command) {
+    let checkpoint_id = match require_checkpoint_id(checkpoint_id) {
         Ok(value) => value,
         Err(outcome) => return outcome,
     };
-    let capture_request_id = match require_capture_request_id(command) {
+    let capture_request_id = match require_capture_request_id(capture_request_id) {
         Ok(value) => value,
         Err(outcome) => return outcome,
     };
-    let client_id = match require_client_id(command) {
+    let client_id = match require_client_id(client_id) {
         Ok(value) => value,
         Err(outcome) => return outcome,
     };
 
-    let observed_capture_url = normalized_optional_text(command.observed_capture_url.as_deref());
+    let observed_capture_url = normalized_optional_text(observed_capture_url);
     let now = now_rfc3339();
     let checkpoint = match active_checkpoint_for_command(run, checkpoint_id) {
         Ok(checkpoint) => checkpoint,
@@ -396,14 +533,16 @@ fn handle_capture_claim(
 fn handle_submit_decision(
     runs: &mut BTreeMap<String, RunState>,
     key: &str,
-    command: &MutateRunCommand,
+    checkpoint_id: Option<&str>,
+    decision_action: Option<&str>,
+    decision_note: Option<String>,
 ) -> MutationOutcome {
     let run = match runs.get_mut(key) {
         Some(r) => r,
         None => return reject("run not found"),
     };
 
-    let checkpoint_id = match require_checkpoint_id(command) {
+    let checkpoint_id = match require_checkpoint_id(checkpoint_id) {
         Ok(value) => value,
         Err(outcome) => return outcome,
     };
@@ -413,7 +552,7 @@ fn handle_submit_decision(
         Err(outcome) => return outcome,
     };
 
-    let action = match normalize_decision_action(command.decision_action.as_deref()) {
+    let action = match normalize_decision_action(decision_action) {
         Ok(action) => action,
         Err(outcome) => return outcome,
     };
@@ -421,7 +560,7 @@ fn handle_submit_decision(
     let now = now_rfc3339();
     checkpoint.decision = Some(CheckpointDecision {
         action: action.clone(),
-        note: command.decision_note.clone(),
+        note: decision_note,
     });
     checkpoint.status = CheckpointStatus::Decided;
     checkpoint.decided_at = Some(now.clone());
@@ -487,15 +626,15 @@ fn next_checkpoint_history_ordinal(run: &RunState) -> u64 {
 fn handle_capture_complete(
     runs: &mut BTreeMap<String, RunState>,
     key: &str,
-    command: &MutateRunCommand,
+    checkpoint_id: Option<&str>,
+    capture_request_id: Option<&str>,
+    completed_media_artifacts: Vec<MediaArtifact>,
 ) -> MutationOutcome {
-    if command.completed_media_artifacts.is_empty() {
+    if completed_media_artifacts.is_empty() {
         return reject("completed_media_artifacts must not be empty");
     }
-    with_validated_capture_mutation(runs, key, command, |checkpoint| {
-        checkpoint
-            .media_artifacts
-            .extend(command.completed_media_artifacts.clone());
+    with_validated_capture_mutation(runs, key, checkpoint_id, capture_request_id, |checkpoint| {
+        checkpoint.media_artifacts.extend(completed_media_artifacts);
         checkpoint.capture_status = CaptureStatus::Completed;
         ok("capture completed")
     })
@@ -504,14 +643,15 @@ fn handle_capture_complete(
 fn handle_capture_failed(
     runs: &mut BTreeMap<String, RunState>,
     key: &str,
-    command: &MutateRunCommand,
+    checkpoint_id: Option<&str>,
+    capture_request_id: Option<&str>,
+    capture_failure_reason: Option<&str>,
 ) -> MutationOutcome {
-    let capture_failure_reason =
-        match normalized_optional_text(command.capture_failure_reason.as_deref()) {
-            Some(value) => value,
-            None => return reject("missing capture_failure_reason"),
-        };
-    with_validated_capture_mutation(runs, key, command, |checkpoint| {
+    let capture_failure_reason = match normalized_optional_text(capture_failure_reason) {
+        Some(value) => value,
+        None => return reject("missing capture_failure_reason"),
+    };
+    with_validated_capture_mutation(runs, key, checkpoint_id, capture_request_id, |checkpoint| {
         checkpoint.capture_status = CaptureStatus::Failed {
             reason: capture_failure_reason,
         };
@@ -522,7 +662,8 @@ fn handle_capture_failed(
 fn handle_attach_session(
     runs: &mut BTreeMap<String, RunState>,
     key: &str,
-    command: &MutateRunCommand,
+    session_id: Option<String>,
+    delegation_worker_id: Option<String>,
 ) -> MutationOutcome {
     let run = match runs.get_mut(key) {
         Some(r) => r,
@@ -533,11 +674,11 @@ fn handle_attach_session(
         return reject("run is in terminal state");
     }
 
-    run.session_id = command.session_id.clone();
+    run.session_id = session_id;
 
     // Also link delegation worker if provided
-    if command.delegation_worker_id.is_some() {
-        run.delegation_worker_id = command.delegation_worker_id.clone();
+    if delegation_worker_id.is_some() {
+        run.delegation_worker_id = delegation_worker_id;
     }
 
     // If this is the first activation, start the first phase
@@ -568,7 +709,7 @@ fn handle_status_transition(
     runs: &mut BTreeMap<String, RunState>,
     key: &str,
     target: RunStatus,
-    command: &MutateRunCommand,
+    status_message: Option<&str>,
     label: &str,
 ) -> MutationOutcome {
     let run = match runs.get_mut(key) {
@@ -586,7 +727,7 @@ fn handle_status_transition(
     }
 
     run.status = target;
-    if let Some(msg) = normalized_optional_text(command.status_message.as_deref()) {
+    if let Some(msg) = normalized_optional_text(status_message) {
         run.status_message = Some(msg);
     }
     run.updated_at = now_rfc3339();
@@ -597,28 +738,22 @@ fn handle_status_transition(
 // Helpers
 // ---------------------------------------------------------------------------
 
-fn require_checkpoint_id(command: &MutateRunCommand) -> Result<&str, MutationOutcome> {
-    command
-        .checkpoint_id
-        .as_deref()
+fn require_checkpoint_id(checkpoint_id: Option<&str>) -> Result<&str, MutationOutcome> {
+    checkpoint_id
         .map(str::trim)
         .filter(|value| !value.is_empty())
         .ok_or_else(|| reject("missing checkpoint_id"))
 }
 
-fn require_capture_request_id(command: &MutateRunCommand) -> Result<&str, MutationOutcome> {
-    command
-        .capture_request_id
-        .as_deref()
+fn require_capture_request_id(capture_request_id: Option<&str>) -> Result<&str, MutationOutcome> {
+    capture_request_id
         .map(str::trim)
         .filter(|value| !value.is_empty())
         .ok_or_else(|| reject("missing capture_request_id"))
 }
 
-fn require_client_id(command: &MutateRunCommand) -> Result<&str, MutationOutcome> {
-    command
-        .client_id
-        .as_deref()
+fn require_client_id(client_id: Option<&str>) -> Result<&str, MutationOutcome> {
+    client_id
         .map(str::trim)
         .filter(|value| !value.is_empty())
         .ok_or_else(|| reject("missing client_id"))
@@ -627,7 +762,8 @@ fn require_client_id(command: &MutateRunCommand) -> Result<&str, MutationOutcome
 fn with_validated_capture_mutation(
     runs: &mut BTreeMap<String, RunState>,
     key: &str,
-    command: &MutateRunCommand,
+    checkpoint_id: Option<&str>,
+    capture_request_id: Option<&str>,
     apply: impl FnOnce(&mut ActiveCheckpoint) -> MutationOutcome,
 ) -> MutationOutcome {
     let run = match runs.get_mut(key) {
@@ -639,11 +775,11 @@ fn with_validated_capture_mutation(
         return reject("run is not paused");
     }
 
-    let checkpoint_id = match require_checkpoint_id(command) {
+    let checkpoint_id = match require_checkpoint_id(checkpoint_id) {
         Ok(value) => value,
         Err(outcome) => return outcome,
     };
-    let capture_request_id = match require_capture_request_id(command) {
+    let capture_request_id = match require_capture_request_id(capture_request_id) {
         Ok(value) => value,
         Err(outcome) => return outcome,
     };

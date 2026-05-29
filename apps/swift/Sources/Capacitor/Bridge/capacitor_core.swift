@@ -3890,207 +3890,62 @@ public func FfiConverterTypeMutateProjectCommand_lower(_ value: MutateProjectCom
     return FfiConverterTypeMutateProjectCommand.lower(value)
 }
 
+/**
+ * A run mutation addressed to a single run.
+ *
+ * `project_path` + `run_id` identify the run uniformly across every mutation
+ * kind; the per-kind payload lives in [`RunMutationKind`].
+ *
+ * # Wire shape
+ *
+ * This is a `uniffi::Record` (UniFFI uses its own codec, NOT serde) and the
+ * domain type the reducer consumes. Its JSON representation — exchanged over the
+ * runtime-service HTTP boundary — is a FLAT object:
+ *
+ * ```text
+ * { "kind": "...", "project_path": ..., "run_id": ..., <variant fields> }
+ * ```
+ *
+ * The serde impls are HAND-WRITTEN (see [`MutateRunCommandWire`]) rather than
+ * derived. We deliberately do NOT use `#[serde(flatten)]` over an
+ * internally-tagged enum: that pairing buffers every field through
+ * `serde::__private::de::Content` and is a documented-fragile pattern (it can
+ * mishandle number coercion and self-describing-format edge cases). The explicit
+ * DTO + projection keeps the wire byte-for-byte identical while removing the
+ * fragile flatten path entirely.
+ */
 public struct MutateRunCommand {
-    public var kind: RunMutationKind
     public var projectPath: String
     public var runId: String
-    public var methodId: String?
-    public var involvement: InvolvementLevel?
-    public var checkpointKind: CheckpointKind?
-    public var checkpointTitle: String?
-    public var checkpointSummary: String?
-    public var checkpointBriefPath: String?
-    public var checkpointManifestPath: String?
-    public var checkpointMediaArtifacts: [MediaArtifact]
-    public var checkpointMermaidSources: [MermaidSource]
-    public var checkpointDecisionRelay: CheckpointDecisionRelay?
-    /**
-     * URL to capture via agent-browser (e.g., "http://localhost:3000").
-     */
-    public var captureUrl: String?
-    public var checkpointId: String?
-    public var captureRequestId: String?
-    public var clientId: String?
-    public var observedCaptureUrl: String?
-    public var captureFailureReason: String?
-    public var decisionAction: String?
-    public var decisionNote: String?
-    public var sessionId: String?
-    public var delegationWorkerId: String?
-    /**
-     * Human-readable progress message for Start and Heartbeat mutations.
-     */
-    public var statusMessage: String?
-    public var ideaId: String?
-    public var ideaTitle: String?
-    public var ideaDescription: String?
-    /**
-     * Media artifact paths to attach via CaptureComplete.
-     */
-    public var completedMediaArtifacts: [MediaArtifact]
+    public var kind: RunMutationKind
 
     /// Default memberwise initializers are never public by default, so we
     /// declare one manually.
-    public init(kind: RunMutationKind, projectPath: String, runId: String, methodId: String?, involvement: InvolvementLevel?, checkpointKind: CheckpointKind?, checkpointTitle: String?, checkpointSummary: String?, checkpointBriefPath: String?, checkpointManifestPath: String?, checkpointMediaArtifacts: [MediaArtifact], checkpointMermaidSources: [MermaidSource], checkpointDecisionRelay: CheckpointDecisionRelay?,
-                /* 
-                    * URL to capture via agent-browser (e.g., "http://localhost:3000").
-                    */ captureUrl: String?, checkpointId: String?, captureRequestId: String?, clientId: String?, observedCaptureUrl: String?, captureFailureReason: String?, decisionAction: String?, decisionNote: String?, sessionId: String?, delegationWorkerId: String?,
-                /* 
-                    * Human-readable progress message for Start and Heartbeat mutations.
-                    */ statusMessage: String?, ideaId: String?, ideaTitle: String?, ideaDescription: String?,
-                /* 
-                    * Media artifact paths to attach via CaptureComplete.
-                    */ completedMediaArtifacts: [MediaArtifact])
-    {
-        self.kind = kind
+    public init(projectPath: String, runId: String, kind: RunMutationKind) {
         self.projectPath = projectPath
         self.runId = runId
-        self.methodId = methodId
-        self.involvement = involvement
-        self.checkpointKind = checkpointKind
-        self.checkpointTitle = checkpointTitle
-        self.checkpointSummary = checkpointSummary
-        self.checkpointBriefPath = checkpointBriefPath
-        self.checkpointManifestPath = checkpointManifestPath
-        self.checkpointMediaArtifacts = checkpointMediaArtifacts
-        self.checkpointMermaidSources = checkpointMermaidSources
-        self.checkpointDecisionRelay = checkpointDecisionRelay
-        self.captureUrl = captureUrl
-        self.checkpointId = checkpointId
-        self.captureRequestId = captureRequestId
-        self.clientId = clientId
-        self.observedCaptureUrl = observedCaptureUrl
-        self.captureFailureReason = captureFailureReason
-        self.decisionAction = decisionAction
-        self.decisionNote = decisionNote
-        self.sessionId = sessionId
-        self.delegationWorkerId = delegationWorkerId
-        self.statusMessage = statusMessage
-        self.ideaId = ideaId
-        self.ideaTitle = ideaTitle
-        self.ideaDescription = ideaDescription
-        self.completedMediaArtifacts = completedMediaArtifacts
+        self.kind = kind
     }
 }
 
 extension MutateRunCommand: Equatable, Hashable {
     public static func == (lhs: MutateRunCommand, rhs: MutateRunCommand) -> Bool {
-        if lhs.kind != rhs.kind {
-            return false
-        }
         if lhs.projectPath != rhs.projectPath {
             return false
         }
         if lhs.runId != rhs.runId {
             return false
         }
-        if lhs.methodId != rhs.methodId {
-            return false
-        }
-        if lhs.involvement != rhs.involvement {
-            return false
-        }
-        if lhs.checkpointKind != rhs.checkpointKind {
-            return false
-        }
-        if lhs.checkpointTitle != rhs.checkpointTitle {
-            return false
-        }
-        if lhs.checkpointSummary != rhs.checkpointSummary {
-            return false
-        }
-        if lhs.checkpointBriefPath != rhs.checkpointBriefPath {
-            return false
-        }
-        if lhs.checkpointManifestPath != rhs.checkpointManifestPath {
-            return false
-        }
-        if lhs.checkpointMediaArtifacts != rhs.checkpointMediaArtifacts {
-            return false
-        }
-        if lhs.checkpointMermaidSources != rhs.checkpointMermaidSources {
-            return false
-        }
-        if lhs.checkpointDecisionRelay != rhs.checkpointDecisionRelay {
-            return false
-        }
-        if lhs.captureUrl != rhs.captureUrl {
-            return false
-        }
-        if lhs.checkpointId != rhs.checkpointId {
-            return false
-        }
-        if lhs.captureRequestId != rhs.captureRequestId {
-            return false
-        }
-        if lhs.clientId != rhs.clientId {
-            return false
-        }
-        if lhs.observedCaptureUrl != rhs.observedCaptureUrl {
-            return false
-        }
-        if lhs.captureFailureReason != rhs.captureFailureReason {
-            return false
-        }
-        if lhs.decisionAction != rhs.decisionAction {
-            return false
-        }
-        if lhs.decisionNote != rhs.decisionNote {
-            return false
-        }
-        if lhs.sessionId != rhs.sessionId {
-            return false
-        }
-        if lhs.delegationWorkerId != rhs.delegationWorkerId {
-            return false
-        }
-        if lhs.statusMessage != rhs.statusMessage {
-            return false
-        }
-        if lhs.ideaId != rhs.ideaId {
-            return false
-        }
-        if lhs.ideaTitle != rhs.ideaTitle {
-            return false
-        }
-        if lhs.ideaDescription != rhs.ideaDescription {
-            return false
-        }
-        if lhs.completedMediaArtifacts != rhs.completedMediaArtifacts {
+        if lhs.kind != rhs.kind {
             return false
         }
         return true
     }
 
     public func hash(into hasher: inout Hasher) {
-        hasher.combine(kind)
         hasher.combine(projectPath)
         hasher.combine(runId)
-        hasher.combine(methodId)
-        hasher.combine(involvement)
-        hasher.combine(checkpointKind)
-        hasher.combine(checkpointTitle)
-        hasher.combine(checkpointSummary)
-        hasher.combine(checkpointBriefPath)
-        hasher.combine(checkpointManifestPath)
-        hasher.combine(checkpointMediaArtifacts)
-        hasher.combine(checkpointMermaidSources)
-        hasher.combine(checkpointDecisionRelay)
-        hasher.combine(captureUrl)
-        hasher.combine(checkpointId)
-        hasher.combine(captureRequestId)
-        hasher.combine(clientId)
-        hasher.combine(observedCaptureUrl)
-        hasher.combine(captureFailureReason)
-        hasher.combine(decisionAction)
-        hasher.combine(decisionNote)
-        hasher.combine(sessionId)
-        hasher.combine(delegationWorkerId)
-        hasher.combine(statusMessage)
-        hasher.combine(ideaId)
-        hasher.combine(ideaTitle)
-        hasher.combine(ideaDescription)
-        hasher.combine(completedMediaArtifacts)
+        hasher.combine(kind)
     }
 }
 
@@ -4101,66 +3956,16 @@ public struct FfiConverterTypeMutateRunCommand: FfiConverterRustBuffer {
     public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> MutateRunCommand {
         return
             try MutateRunCommand(
-                kind: FfiConverterTypeRunMutationKind.read(from: &buf),
                 projectPath: FfiConverterString.read(from: &buf),
                 runId: FfiConverterString.read(from: &buf),
-                methodId: FfiConverterOptionString.read(from: &buf),
-                involvement: FfiConverterOptionTypeInvolvementLevel.read(from: &buf),
-                checkpointKind: FfiConverterOptionTypeCheckpointKind.read(from: &buf),
-                checkpointTitle: FfiConverterOptionString.read(from: &buf),
-                checkpointSummary: FfiConverterOptionString.read(from: &buf),
-                checkpointBriefPath: FfiConverterOptionString.read(from: &buf),
-                checkpointManifestPath: FfiConverterOptionString.read(from: &buf),
-                checkpointMediaArtifacts: FfiConverterSequenceTypeMediaArtifact.read(from: &buf),
-                checkpointMermaidSources: FfiConverterSequenceTypeMermaidSource.read(from: &buf),
-                checkpointDecisionRelay: FfiConverterOptionTypeCheckpointDecisionRelay.read(from: &buf),
-                captureUrl: FfiConverterOptionString.read(from: &buf),
-                checkpointId: FfiConverterOptionString.read(from: &buf),
-                captureRequestId: FfiConverterOptionString.read(from: &buf),
-                clientId: FfiConverterOptionString.read(from: &buf),
-                observedCaptureUrl: FfiConverterOptionString.read(from: &buf),
-                captureFailureReason: FfiConverterOptionString.read(from: &buf),
-                decisionAction: FfiConverterOptionString.read(from: &buf),
-                decisionNote: FfiConverterOptionString.read(from: &buf),
-                sessionId: FfiConverterOptionString.read(from: &buf),
-                delegationWorkerId: FfiConverterOptionString.read(from: &buf),
-                statusMessage: FfiConverterOptionString.read(from: &buf),
-                ideaId: FfiConverterOptionString.read(from: &buf),
-                ideaTitle: FfiConverterOptionString.read(from: &buf),
-                ideaDescription: FfiConverterOptionString.read(from: &buf),
-                completedMediaArtifacts: FfiConverterSequenceTypeMediaArtifact.read(from: &buf)
+                kind: FfiConverterTypeRunMutationKind.read(from: &buf)
             )
     }
 
     public static func write(_ value: MutateRunCommand, into buf: inout [UInt8]) {
-        FfiConverterTypeRunMutationKind.write(value.kind, into: &buf)
         FfiConverterString.write(value.projectPath, into: &buf)
         FfiConverterString.write(value.runId, into: &buf)
-        FfiConverterOptionString.write(value.methodId, into: &buf)
-        FfiConverterOptionTypeInvolvementLevel.write(value.involvement, into: &buf)
-        FfiConverterOptionTypeCheckpointKind.write(value.checkpointKind, into: &buf)
-        FfiConverterOptionString.write(value.checkpointTitle, into: &buf)
-        FfiConverterOptionString.write(value.checkpointSummary, into: &buf)
-        FfiConverterOptionString.write(value.checkpointBriefPath, into: &buf)
-        FfiConverterOptionString.write(value.checkpointManifestPath, into: &buf)
-        FfiConverterSequenceTypeMediaArtifact.write(value.checkpointMediaArtifacts, into: &buf)
-        FfiConverterSequenceTypeMermaidSource.write(value.checkpointMermaidSources, into: &buf)
-        FfiConverterOptionTypeCheckpointDecisionRelay.write(value.checkpointDecisionRelay, into: &buf)
-        FfiConverterOptionString.write(value.captureUrl, into: &buf)
-        FfiConverterOptionString.write(value.checkpointId, into: &buf)
-        FfiConverterOptionString.write(value.captureRequestId, into: &buf)
-        FfiConverterOptionString.write(value.clientId, into: &buf)
-        FfiConverterOptionString.write(value.observedCaptureUrl, into: &buf)
-        FfiConverterOptionString.write(value.captureFailureReason, into: &buf)
-        FfiConverterOptionString.write(value.decisionAction, into: &buf)
-        FfiConverterOptionString.write(value.decisionNote, into: &buf)
-        FfiConverterOptionString.write(value.sessionId, into: &buf)
-        FfiConverterOptionString.write(value.delegationWorkerId, into: &buf)
-        FfiConverterOptionString.write(value.statusMessage, into: &buf)
-        FfiConverterOptionString.write(value.ideaId, into: &buf)
-        FfiConverterOptionString.write(value.ideaTitle, into: &buf)
-        FfiConverterOptionString.write(value.ideaDescription, into: &buf)
-        FfiConverterSequenceTypeMediaArtifact.write(value.completedMediaArtifacts, into: &buf)
+        FfiConverterTypeRunMutationKind.write(value.kind, into: &buf)
     }
 }
 
@@ -8614,24 +8419,38 @@ extension RoutingTargetKind: Equatable, Hashable {}
 
 // Note that we don't yet support `indirect` for enums.
 // See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
+/* 
+ * Run-mutation payload, carried as the typed discriminant of [`MutateRunCommand`].
+ *
+ * Each variant carries ONLY the fields its reducer handler reads. This is the
+ * domain type the reducer and FFI consume — it is intentionally NOT serde-derived.
+ *
+ * The on-the-wire shape is a FLAT object —
+ * `{ "kind": "...", "project_path": ..., "run_id": ..., <variant fields> }` —
+ * produced/consumed by the hand-written `Serialize`/`Deserialize` impls on
+ * [`MutateRunCommand`] via the private [`MutateRunCommandWire`] DTO. We avoid
+ * `#[serde(flatten)]` + an internally-tagged enum here: that combination buffers
+ * through `serde::__private::de::Content` and is a known-fragile pattern. The
+ * explicit DTO+projection keeps the wire identical while removing that fragility.
+ */
 
 public enum RunMutationKind {
-    case create
-    case start
-    case heartbeat
+    case create(methodId: String?, involvement: InvolvementLevel?, delegationWorkerId: String?, ideaId: String?, ideaTitle: String?, ideaDescription: String?)
+    case start(statusMessage: String?)
+    case heartbeat(statusMessage: String?)
     case advancePhase
-    case emitCheckpoint
-    case submitDecision
-    case attachSession
+    case emitCheckpoint(checkpointKind: CheckpointKind?, checkpointTitle: String?, checkpointSummary: String?, checkpointBriefPath: String?, checkpointManifestPath: String?, checkpointMediaArtifacts: [MediaArtifact], checkpointMermaidSources: [MermaidSource], checkpointDecisionRelay: CheckpointDecisionRelay?, captureUrl: String?, checkpointId: String?)
+    case submitDecision(checkpointId: String?, decisionAction: String?, decisionNote: String?)
+    case attachSession(sessionId: String?, delegationWorkerId: String?)
     case detachSession
-    case captureClaim
-    case captureFailed
-    case captureComplete
-    case pause
-    case resume
-    case complete
-    case fail
-    case cancel
+    case captureClaim(checkpointId: String?, captureRequestId: String?, clientId: String?, observedCaptureUrl: String?)
+    case captureFailed(checkpointId: String?, captureRequestId: String?, captureFailureReason: String?)
+    case captureComplete(checkpointId: String?, captureRequestId: String?, completedMediaArtifacts: [MediaArtifact])
+    case pause(statusMessage: String?)
+    case resume(statusMessage: String?)
+    case complete(statusMessage: String?)
+    case fail(statusMessage: String?)
+    case cancel(statusMessage: String?)
 }
 
 #if swift(>=5.8)
@@ -8643,37 +8462,37 @@ public struct FfiConverterTypeRunMutationKind: FfiConverterRustBuffer {
     public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> RunMutationKind {
         let variant: Int32 = try readInt(&buf)
         switch variant {
-        case 1: return .create
+        case 1: return try .create(methodId: FfiConverterOptionString.read(from: &buf), involvement: FfiConverterOptionTypeInvolvementLevel.read(from: &buf), delegationWorkerId: FfiConverterOptionString.read(from: &buf), ideaId: FfiConverterOptionString.read(from: &buf), ideaTitle: FfiConverterOptionString.read(from: &buf), ideaDescription: FfiConverterOptionString.read(from: &buf))
 
-        case 2: return .start
+        case 2: return try .start(statusMessage: FfiConverterOptionString.read(from: &buf))
 
-        case 3: return .heartbeat
+        case 3: return try .heartbeat(statusMessage: FfiConverterOptionString.read(from: &buf))
 
         case 4: return .advancePhase
 
-        case 5: return .emitCheckpoint
+        case 5: return try .emitCheckpoint(checkpointKind: FfiConverterOptionTypeCheckpointKind.read(from: &buf), checkpointTitle: FfiConverterOptionString.read(from: &buf), checkpointSummary: FfiConverterOptionString.read(from: &buf), checkpointBriefPath: FfiConverterOptionString.read(from: &buf), checkpointManifestPath: FfiConverterOptionString.read(from: &buf), checkpointMediaArtifacts: FfiConverterSequenceTypeMediaArtifact.read(from: &buf), checkpointMermaidSources: FfiConverterSequenceTypeMermaidSource.read(from: &buf), checkpointDecisionRelay: FfiConverterOptionTypeCheckpointDecisionRelay.read(from: &buf), captureUrl: FfiConverterOptionString.read(from: &buf), checkpointId: FfiConverterOptionString.read(from: &buf))
 
-        case 6: return .submitDecision
+        case 6: return try .submitDecision(checkpointId: FfiConverterOptionString.read(from: &buf), decisionAction: FfiConverterOptionString.read(from: &buf), decisionNote: FfiConverterOptionString.read(from: &buf))
 
-        case 7: return .attachSession
+        case 7: return try .attachSession(sessionId: FfiConverterOptionString.read(from: &buf), delegationWorkerId: FfiConverterOptionString.read(from: &buf))
 
         case 8: return .detachSession
 
-        case 9: return .captureClaim
+        case 9: return try .captureClaim(checkpointId: FfiConverterOptionString.read(from: &buf), captureRequestId: FfiConverterOptionString.read(from: &buf), clientId: FfiConverterOptionString.read(from: &buf), observedCaptureUrl: FfiConverterOptionString.read(from: &buf))
 
-        case 10: return .captureFailed
+        case 10: return try .captureFailed(checkpointId: FfiConverterOptionString.read(from: &buf), captureRequestId: FfiConverterOptionString.read(from: &buf), captureFailureReason: FfiConverterOptionString.read(from: &buf))
 
-        case 11: return .captureComplete
+        case 11: return try .captureComplete(checkpointId: FfiConverterOptionString.read(from: &buf), captureRequestId: FfiConverterOptionString.read(from: &buf), completedMediaArtifacts: FfiConverterSequenceTypeMediaArtifact.read(from: &buf))
 
-        case 12: return .pause
+        case 12: return try .pause(statusMessage: FfiConverterOptionString.read(from: &buf))
 
-        case 13: return .resume
+        case 13: return try .resume(statusMessage: FfiConverterOptionString.read(from: &buf))
 
-        case 14: return .complete
+        case 14: return try .complete(statusMessage: FfiConverterOptionString.read(from: &buf))
 
-        case 15: return .fail
+        case 15: return try .fail(statusMessage: FfiConverterOptionString.read(from: &buf))
 
-        case 16: return .cancel
+        case 16: return try .cancel(statusMessage: FfiConverterOptionString.read(from: &buf))
 
         default: throw UniffiInternalError.unexpectedEnumCase
         }
@@ -8681,53 +8500,91 @@ public struct FfiConverterTypeRunMutationKind: FfiConverterRustBuffer {
 
     public static func write(_ value: RunMutationKind, into buf: inout [UInt8]) {
         switch value {
-        case .create:
+        case let .create(methodId, involvement, delegationWorkerId, ideaId, ideaTitle, ideaDescription):
             writeInt(&buf, Int32(1))
+            FfiConverterOptionString.write(methodId, into: &buf)
+            FfiConverterOptionTypeInvolvementLevel.write(involvement, into: &buf)
+            FfiConverterOptionString.write(delegationWorkerId, into: &buf)
+            FfiConverterOptionString.write(ideaId, into: &buf)
+            FfiConverterOptionString.write(ideaTitle, into: &buf)
+            FfiConverterOptionString.write(ideaDescription, into: &buf)
 
-        case .start:
+        case let .start(statusMessage):
             writeInt(&buf, Int32(2))
+            FfiConverterOptionString.write(statusMessage, into: &buf)
 
-        case .heartbeat:
+        case let .heartbeat(statusMessage):
             writeInt(&buf, Int32(3))
+            FfiConverterOptionString.write(statusMessage, into: &buf)
 
         case .advancePhase:
             writeInt(&buf, Int32(4))
 
-        case .emitCheckpoint:
+        case let .emitCheckpoint(checkpointKind, checkpointTitle, checkpointSummary, checkpointBriefPath, checkpointManifestPath, checkpointMediaArtifacts, checkpointMermaidSources, checkpointDecisionRelay, captureUrl, checkpointId):
             writeInt(&buf, Int32(5))
+            FfiConverterOptionTypeCheckpointKind.write(checkpointKind, into: &buf)
+            FfiConverterOptionString.write(checkpointTitle, into: &buf)
+            FfiConverterOptionString.write(checkpointSummary, into: &buf)
+            FfiConverterOptionString.write(checkpointBriefPath, into: &buf)
+            FfiConverterOptionString.write(checkpointManifestPath, into: &buf)
+            FfiConverterSequenceTypeMediaArtifact.write(checkpointMediaArtifacts, into: &buf)
+            FfiConverterSequenceTypeMermaidSource.write(checkpointMermaidSources, into: &buf)
+            FfiConverterOptionTypeCheckpointDecisionRelay.write(checkpointDecisionRelay, into: &buf)
+            FfiConverterOptionString.write(captureUrl, into: &buf)
+            FfiConverterOptionString.write(checkpointId, into: &buf)
 
-        case .submitDecision:
+        case let .submitDecision(checkpointId, decisionAction, decisionNote):
             writeInt(&buf, Int32(6))
+            FfiConverterOptionString.write(checkpointId, into: &buf)
+            FfiConverterOptionString.write(decisionAction, into: &buf)
+            FfiConverterOptionString.write(decisionNote, into: &buf)
 
-        case .attachSession:
+        case let .attachSession(sessionId, delegationWorkerId):
             writeInt(&buf, Int32(7))
+            FfiConverterOptionString.write(sessionId, into: &buf)
+            FfiConverterOptionString.write(delegationWorkerId, into: &buf)
 
         case .detachSession:
             writeInt(&buf, Int32(8))
 
-        case .captureClaim:
+        case let .captureClaim(checkpointId, captureRequestId, clientId, observedCaptureUrl):
             writeInt(&buf, Int32(9))
+            FfiConverterOptionString.write(checkpointId, into: &buf)
+            FfiConverterOptionString.write(captureRequestId, into: &buf)
+            FfiConverterOptionString.write(clientId, into: &buf)
+            FfiConverterOptionString.write(observedCaptureUrl, into: &buf)
 
-        case .captureFailed:
+        case let .captureFailed(checkpointId, captureRequestId, captureFailureReason):
             writeInt(&buf, Int32(10))
+            FfiConverterOptionString.write(checkpointId, into: &buf)
+            FfiConverterOptionString.write(captureRequestId, into: &buf)
+            FfiConverterOptionString.write(captureFailureReason, into: &buf)
 
-        case .captureComplete:
+        case let .captureComplete(checkpointId, captureRequestId, completedMediaArtifacts):
             writeInt(&buf, Int32(11))
+            FfiConverterOptionString.write(checkpointId, into: &buf)
+            FfiConverterOptionString.write(captureRequestId, into: &buf)
+            FfiConverterSequenceTypeMediaArtifact.write(completedMediaArtifacts, into: &buf)
 
-        case .pause:
+        case let .pause(statusMessage):
             writeInt(&buf, Int32(12))
+            FfiConverterOptionString.write(statusMessage, into: &buf)
 
-        case .resume:
+        case let .resume(statusMessage):
             writeInt(&buf, Int32(13))
+            FfiConverterOptionString.write(statusMessage, into: &buf)
 
-        case .complete:
+        case let .complete(statusMessage):
             writeInt(&buf, Int32(14))
+            FfiConverterOptionString.write(statusMessage, into: &buf)
 
-        case .fail:
+        case let .fail(statusMessage):
             writeInt(&buf, Int32(15))
+            FfiConverterOptionString.write(statusMessage, into: &buf)
 
-        case .cancel:
+        case let .cancel(statusMessage):
             writeInt(&buf, Int32(16))
+            FfiConverterOptionString.write(statusMessage, into: &buf)
         }
     }
 }

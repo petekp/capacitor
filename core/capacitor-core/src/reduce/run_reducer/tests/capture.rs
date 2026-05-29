@@ -5,11 +5,14 @@ fn emit_checkpoint_with_media_artifacts() {
     use crate::domain::{CaptureStatus, MediaArtifact, MediaArtifactType, MermaidSource};
 
     let mut runs = empty_runs();
-    apply_run_mutation(&mut runs, create_command("run-001", "execution_only"));
+    apply_run_mutation(
+        &mut runs,
+        create_command("run-001", "execution_only").into_command(Kind::Create),
+    );
 
     let mut cmd = base_cmd("run-001");
     cmd.session_id = Some("s1".to_string());
-    mutate(&mut runs, cmd, RunMutationKind::AttachSession);
+    mutate(&mut runs, cmd, Kind::AttachSession);
 
     let mut cmd = base_cmd("run-001");
     cmd.checkpoint_kind = Some(CheckpointKind::ImplementationMilestone);
@@ -27,7 +30,7 @@ fn emit_checkpoint_with_media_artifacts() {
         source: "graph LR; A-->B".to_string(),
     }];
     cmd.capture_url = Some("http://localhost:3000".to_string());
-    let result = mutate(&mut runs, cmd, RunMutationKind::EmitCheckpoint);
+    let result = mutate(&mut runs, cmd, Kind::EmitCheckpoint);
     assert!(result.ok, "{}", result.message);
 
     let run = runs.values().next().unwrap();
@@ -45,7 +48,10 @@ fn capture_complete_updates_checkpoint() {
     use crate::domain::{CaptureStatus, MediaArtifact, MediaArtifactType};
 
     let mut runs = empty_runs();
-    apply_run_mutation(&mut runs, create_command("run-001", "execution_only"));
+    apply_run_mutation(
+        &mut runs,
+        create_command("run-001", "execution_only").into_command(Kind::Create),
+    );
     attach_session(&mut runs, "run-001");
     let checkpoint_id = emit_pending_checkpoint(&mut runs, "run-001", "http://localhost:3000");
 
@@ -73,7 +79,7 @@ fn capture_complete_updates_checkpoint() {
             duration_secs: None,
         },
     ];
-    let result = mutate(&mut runs, cmd, RunMutationKind::CaptureComplete);
+    let result = mutate(&mut runs, cmd, Kind::CaptureComplete);
     assert!(result.ok, "{}", result.message);
 
     let run = runs.values().next().unwrap();
@@ -94,7 +100,10 @@ fn capture_complete_rejects_without_claim() {
     use crate::domain::{MediaArtifact, MediaArtifactType};
 
     let mut runs = empty_runs();
-    apply_run_mutation(&mut runs, create_command("run-001", "execution_only"));
+    apply_run_mutation(
+        &mut runs,
+        create_command("run-001", "execution_only").into_command(Kind::Create),
+    );
     attach_session(&mut runs, "run-001");
     let checkpoint_id = emit_pending_checkpoint(&mut runs, "run-001", "http://localhost:3000");
 
@@ -109,7 +118,7 @@ fn capture_complete_rejects_without_claim() {
         height: Some(800),
         duration_secs: None,
     }];
-    let result = mutate(&mut runs, cmd, RunMutationKind::CaptureComplete);
+    let result = mutate(&mut runs, cmd, Kind::CaptureComplete);
     assert!(!result.ok);
     assert!(result.message.contains("not in progress"));
 }
@@ -119,7 +128,10 @@ fn emit_checkpoint_with_capture_url_auto_sets_pending() {
     use crate::domain::CaptureStatus;
 
     let mut runs = empty_runs();
-    apply_run_mutation(&mut runs, create_command("run-001", "execution_only"));
+    apply_run_mutation(
+        &mut runs,
+        create_command("run-001", "execution_only").into_command(Kind::Create),
+    );
 
     attach_session(&mut runs, "run-001");
 
@@ -127,7 +139,7 @@ fn emit_checkpoint_with_capture_url_auto_sets_pending() {
     cmd.checkpoint_kind = Some(CheckpointKind::ImplementationMilestone);
     cmd.checkpoint_title = Some("URL capture".to_string());
     cmd.capture_url = Some("http://localhost:3000".to_string());
-    let result = mutate(&mut runs, cmd, RunMutationKind::EmitCheckpoint);
+    let result = mutate(&mut runs, cmd, Kind::EmitCheckpoint);
     assert!(result.ok, "{}", result.message);
 
     let run = runs.values().next().unwrap();
@@ -142,13 +154,16 @@ fn emit_checkpoint_with_blank_capture_url_stays_not_requested() {
     use crate::domain::CaptureStatus;
 
     let mut runs = empty_runs();
-    apply_run_mutation(&mut runs, create_command("run-001", "execution_only"));
+    apply_run_mutation(
+        &mut runs,
+        create_command("run-001", "execution_only").into_command(Kind::Create),
+    );
     attach_session(&mut runs, "run-001");
 
     let mut cmd = base_cmd("run-001");
     cmd.checkpoint_kind = Some(CheckpointKind::ImplementationMilestone);
     cmd.capture_url = Some("   ".to_string());
-    let result = mutate(&mut runs, cmd, RunMutationKind::EmitCheckpoint);
+    let result = mutate(&mut runs, cmd, Kind::EmitCheckpoint);
     assert!(result.ok, "{}", result.message);
 
     let run = runs.values().next().unwrap();
@@ -163,7 +178,10 @@ fn capture_claim_transitions_pending_to_in_progress() {
     use crate::domain::CaptureStatus;
 
     let mut runs = empty_runs();
-    apply_run_mutation(&mut runs, create_command("run-001", "execution_only"));
+    apply_run_mutation(
+        &mut runs,
+        create_command("run-001", "execution_only").into_command(Kind::Create),
+    );
     attach_session(&mut runs, "run-001");
     let checkpoint_id = emit_pending_checkpoint(&mut runs, "run-001", " http://localhost:3000 ");
 
@@ -186,7 +204,10 @@ fn capture_claim_transitions_pending_to_in_progress() {
 #[test]
 fn capture_claim_rejects_non_pending_checkpoint() {
     let mut runs = empty_runs();
-    apply_run_mutation(&mut runs, create_command("run-001", "execution_only"));
+    apply_run_mutation(
+        &mut runs,
+        create_command("run-001", "execution_only").into_command(Kind::Create),
+    );
     attach_session(&mut runs, "run-001");
     let checkpoint_id = emit_pending_checkpoint(&mut runs, "run-001", "http://localhost:3000");
 
@@ -201,7 +222,10 @@ fn capture_claim_rejects_non_pending_checkpoint() {
 #[test]
 fn capture_claim_rejects_mismatched_checkpoint_id() {
     let mut runs = empty_runs();
-    apply_run_mutation(&mut runs, create_command("run-001", "execution_only"));
+    apply_run_mutation(
+        &mut runs,
+        create_command("run-001", "execution_only").into_command(Kind::Create),
+    );
     attach_session(&mut runs, "run-001");
     emit_pending_checkpoint(&mut runs, "run-001", "http://localhost:3000");
 
@@ -213,7 +237,10 @@ fn capture_claim_rejects_mismatched_checkpoint_id() {
 #[test]
 fn capture_claim_rejects_terminal_or_non_paused_run() {
     let mut runs = empty_runs();
-    apply_run_mutation(&mut runs, create_command("run-001", "execution_only"));
+    apply_run_mutation(
+        &mut runs,
+        create_command("run-001", "execution_only").into_command(Kind::Create),
+    );
     attach_session(&mut runs, "run-001");
     let checkpoint_id = emit_pending_checkpoint(&mut runs, "run-001", "http://localhost:3000");
     let key = run_key("/test/project", "run-001");
@@ -234,7 +261,10 @@ fn capture_complete_rejects_mismatched_capture_request_id() {
     use crate::domain::{CaptureStatus, MediaArtifact, MediaArtifactType};
 
     let mut runs = empty_runs();
-    apply_run_mutation(&mut runs, create_command("run-001", "execution_only"));
+    apply_run_mutation(
+        &mut runs,
+        create_command("run-001", "execution_only").into_command(Kind::Create),
+    );
     attach_session(&mut runs, "run-001");
     let checkpoint_id = emit_pending_checkpoint(&mut runs, "run-001", "http://localhost:3000");
     let claim = claim_capture(&mut runs, "run-001", &checkpoint_id, "request-1");
@@ -251,7 +281,7 @@ fn capture_complete_rejects_mismatched_capture_request_id() {
         height: Some(800),
         duration_secs: None,
     }];
-    let result = mutate(&mut runs, cmd, RunMutationKind::CaptureComplete);
+    let result = mutate(&mut runs, cmd, Kind::CaptureComplete);
     assert!(!result.ok);
     assert!(result.message.contains("does not match active claim"));
 
@@ -265,7 +295,10 @@ fn capture_failed_sets_reason_on_checkpoint() {
     use crate::domain::CaptureStatus;
 
     let mut runs = empty_runs();
-    apply_run_mutation(&mut runs, create_command("run-001", "execution_only"));
+    apply_run_mutation(
+        &mut runs,
+        create_command("run-001", "execution_only").into_command(Kind::Create),
+    );
     attach_session(&mut runs, "run-001");
     let checkpoint_id = emit_pending_checkpoint(&mut runs, "run-001", "http://localhost:3000");
     let claim = claim_capture(&mut runs, "run-001", &checkpoint_id, "request-1");
@@ -275,7 +308,7 @@ fn capture_failed_sets_reason_on_checkpoint() {
     cmd.checkpoint_id = Some(checkpoint_id);
     cmd.capture_request_id = Some("request-1".to_string());
     cmd.capture_failure_reason = Some(" browser crashed ".to_string());
-    let result = mutate(&mut runs, cmd, RunMutationKind::CaptureFailed);
+    let result = mutate(&mut runs, cmd, Kind::CaptureFailed);
     assert!(result.ok, "{}", result.message);
 
     let run = runs.values().next().unwrap();
@@ -293,7 +326,10 @@ fn stale_capture_completion_is_rejected_after_checkpoint_turnover() {
     use crate::domain::{CaptureStatus, MediaArtifact, MediaArtifactType};
 
     let mut runs = empty_runs();
-    apply_run_mutation(&mut runs, create_command("run-001", "execution_only"));
+    apply_run_mutation(
+        &mut runs,
+        create_command("run-001", "execution_only").into_command(Kind::Create),
+    );
     attach_session(&mut runs, "run-001");
     let checkpoint_a_id = emit_pending_checkpoint(&mut runs, "run-001", "http://localhost:3000");
     let claim = claim_capture(&mut runs, "run-001", &checkpoint_a_id, "request-a");
@@ -302,7 +338,7 @@ fn stale_capture_completion_is_rejected_after_checkpoint_turnover() {
     let mut decision = base_cmd("run-001");
     decision.checkpoint_id = Some(checkpoint_a_id.clone());
     decision.decision_action = Some("approve".to_string());
-    let decision_result = mutate(&mut runs, decision, RunMutationKind::SubmitDecision);
+    let decision_result = mutate(&mut runs, decision, Kind::SubmitDecision);
     assert!(decision_result.ok, "{}", decision_result.message);
 
     let checkpoint_b_id = emit_pending_checkpoint(&mut runs, "run-001", "http://localhost:4000");
@@ -318,7 +354,7 @@ fn stale_capture_completion_is_rejected_after_checkpoint_turnover() {
         height: Some(800),
         duration_secs: None,
     }];
-    let result = mutate(&mut runs, stale_complete, RunMutationKind::CaptureComplete);
+    let result = mutate(&mut runs, stale_complete, Kind::CaptureComplete);
     assert!(!result.ok);
     assert!(result.message.contains("does not match active checkpoint"));
 
@@ -331,14 +367,17 @@ fn stale_capture_completion_is_rejected_after_checkpoint_turnover() {
 #[test]
 fn emit_checkpoint_capture_url_persists_to_active() {
     let mut runs = empty_runs();
-    apply_run_mutation(&mut runs, create_command("run-001", "execution_only"));
+    apply_run_mutation(
+        &mut runs,
+        create_command("run-001", "execution_only").into_command(Kind::Create),
+    );
 
     attach_session(&mut runs, "run-001");
 
     let mut cmd = base_cmd("run-001");
     cmd.checkpoint_kind = Some(CheckpointKind::ImplementationMilestone);
     cmd.capture_url = Some(" http://localhost:5173 ".to_string());
-    let result = mutate(&mut runs, cmd, RunMutationKind::EmitCheckpoint);
+    let result = mutate(&mut runs, cmd, Kind::EmitCheckpoint);
     assert!(result.ok, "{}", result.message);
 
     let run = runs.values().next().unwrap();

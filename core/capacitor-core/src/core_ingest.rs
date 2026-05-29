@@ -75,8 +75,8 @@ impl CoreRuntime {
         let project_path = command.project_path.trim();
         let run_id = command.run_id.trim();
         let Some(checkpoint_id) = command
-            .checkpoint_id
-            .as_deref()
+            .kind
+            .checkpoint_id()
             .map(str::trim)
             .filter(|value| !value.is_empty())
         else {
