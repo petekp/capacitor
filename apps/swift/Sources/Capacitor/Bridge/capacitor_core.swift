@@ -4016,8 +4016,9 @@ public func FfiConverterTypeMutateProjectCommand_lower(_ value: MutateProjectCom
  * internally-tagged enum: that pairing buffers every field through
  * `serde::__private::de::Content` and is a documented-fragile pattern (it can
  * mishandle number coercion and self-describing-format edge cases). The explicit
- * DTO + projection keeps the wire byte-for-byte identical while removing the
- * fragile flatten path entirely.
+ * DTO + projection keeps the wire FLAT and deserialization-compatible (every
+ * historical frame still decodes; the serialized object now carries only the
+ * active variant's payload keys) while removing the fragile flatten path entirely.
  */
 public struct MutateRunCommand {
     public var projectPath: String
@@ -8710,7 +8711,8 @@ extension RoutingTargetKind: Equatable, Hashable {}
  * [`MutateRunCommand`] via the private [`MutateRunCommandWire`] DTO. We avoid
  * `#[serde(flatten)]` + an internally-tagged enum here: that combination buffers
  * through `serde::__private::de::Content` and is a known-fragile pattern. The
- * explicit DTO+projection keeps the wire identical while removing that fragility.
+ * explicit DTO+projection keeps the wire FLAT and backward-compatible (every
+ * historical frame still deserializes) while removing that fragility.
  */
 
 public enum RunMutationKind {
