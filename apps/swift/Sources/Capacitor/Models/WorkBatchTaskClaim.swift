@@ -27,65 +27,36 @@ struct WorkBatchLoadedTaskClaim: Equatable {
     let url: URL
 }
 
+/// Thin wrapper over `JSONDirectoryStore`. Claims BORROW the completion-report
+/// filename rule (uncapped, fallback "task") so a task's claim and its done report
+/// resolve to the same basename.
 struct WorkBatchTaskClaimStore {
     static let relativeDirectory = ".capacitor/work-batch-claims"
 
-    private let worktreeURL: URL
-    private let fileManager: FileManager
+    private let store: JSONDirectoryStore<WorkBatchTaskClaim>
 
     init(
         worktreePath: String,
         fileManager: FileManager = .default,
     ) {
-        worktreeURL = URL(fileURLWithPath: worktreePath, isDirectory: true)
-        self.fileManager = fileManager
+        store = JSONDirectoryStore(
+            worktreePath: worktreePath,
+            fileManager: fileManager,
+            relativeDirectory: Self.relativeDirectory,
+            fileName: WorkBatchCompletionReportStore.reportFileName(taskID:),
+            loadPredicate: { $0.isWorking },
+        )
     }
 
     func claimURL(taskID: String) -> URL {
-        directoryURL.appendingPathComponent(WorkBatchCompletionReportStore.reportFileName(taskID: taskID))
+        store.url(forID: taskID)
     }
 
     func loadClaims() throws -> [WorkBatchLoadedTaskClaim] {
-        guard fileManager.fileExists(atPath: directoryURL.path) else { return [] }
-
-        let urls = try fileManager.contentsOfDirectory(
-            at: directoryURL,
-            includingPropertiesForKeys: nil,
-        )
-        let decoder = JSONDecoder()
-        decoder.dateDecodingStrategy = .capacitorISO8601
-
-        return urls
-            .filter { $0.pathExtension == "json" }
-            .compactMap { url in
-                guard let data = try? Data(contentsOf: url),
-                      let claim = try? decoder.decode(WorkBatchTaskClaim.self, from: data),
-                      claim.isWorking
-                else {
-                    return nil
-                }
-                return WorkBatchLoadedTaskClaim(claim: claim, url: url)
-            }
+        try store.load().map { WorkBatchLoadedTaskClaim(claim: $0.record, url: $0.url) }
     }
 
     func write(_ claim: WorkBatchTaskClaim) throws -> URL {
-        try? WorkBatchMetadataIgnoreInstaller.install(
-            in: worktreeURL.path,
-            fileManager: fileManager,
-        )
-        try fileManager.createDirectory(
-            at: directoryURL,
-            withIntermediateDirectories: true,
-        )
-        let url = claimURL(taskID: claim.taskID)
-        let encoder = JSONEncoder()
-        encoder.dateEncodingStrategy = .iso8601
-        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
-        try encoder.encode(claim).write(to: url, options: .atomic)
-        return url
-    }
-
-    private var directoryURL: URL {
-        worktreeURL.appendingPathComponent(Self.relativeDirectory, isDirectory: true)
+        try store.write(claim, id: claim.taskID)
     }
 }

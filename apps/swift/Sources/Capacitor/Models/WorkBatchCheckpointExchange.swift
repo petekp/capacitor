@@ -27,81 +27,40 @@ struct WorkBatchLoadedCheckpointRequest: Equatable {
     let url: URL
 }
 
+/// Thin wrapper over `JSONDirectoryStore`. Uncapped filename, fallback "checkpoint",
+/// loads only requests with a usable question.
 struct WorkBatchCheckpointRequestStore {
     static let relativeDirectory = ".capacitor/work-batch-checkpoints"
 
-    private let worktreeURL: URL
-    private let fileManager: FileManager
+    private let store: JSONDirectoryStore<WorkBatchCheckpointRequest>
 
     init(
         worktreePath: String,
         fileManager: FileManager = .default,
     ) {
-        worktreeURL = URL(fileURLWithPath: worktreePath, isDirectory: true)
-        self.fileManager = fileManager
+        store = JSONDirectoryStore(
+            worktreePath: worktreePath,
+            fileManager: fileManager,
+            relativeDirectory: Self.relativeDirectory,
+            fileName: Self.fileName(id:),
+            loadPredicate: { $0.hasUsableQuestion },
+        )
     }
 
     func requestURL(checkpointID: String) -> URL {
-        directoryURL.appendingPathComponent(Self.fileName(id: checkpointID))
+        store.url(forID: checkpointID)
     }
 
     func loadRequests() throws -> [WorkBatchLoadedCheckpointRequest] {
-        guard fileManager.fileExists(atPath: directoryURL.path) else { return [] }
-
-        let urls = try fileManager.contentsOfDirectory(
-            at: directoryURL,
-            includingPropertiesForKeys: nil,
-        )
-        let decoder = JSONDecoder()
-        decoder.dateDecodingStrategy = .capacitorISO8601
-
-        return urls
-            .filter { $0.pathExtension == "json" }
-            .compactMap { url in
-                guard let data = try? Data(contentsOf: url),
-                      let request = try? decoder.decode(WorkBatchCheckpointRequest.self, from: data),
-                      request.hasUsableQuestion
-                else {
-                    return nil
-                }
-                return WorkBatchLoadedCheckpointRequest(request: request, url: url)
-            }
+        try store.load().map { WorkBatchLoadedCheckpointRequest(request: $0.record, url: $0.url) }
     }
 
     func write(_ request: WorkBatchCheckpointRequest) throws -> URL {
-        try? WorkBatchMetadataIgnoreInstaller.install(
-            in: worktreeURL.path,
-            fileManager: fileManager,
-        )
-        try fileManager.createDirectory(
-            at: directoryURL,
-            withIntermediateDirectories: true,
-        )
-
-        let url = requestURL(checkpointID: request.checkpointID)
-        let encoder = JSONEncoder()
-        encoder.dateEncodingStrategy = .iso8601
-        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
-        try encoder.encode(request).write(to: url, options: .atomic)
-        return url
+        try store.write(request, id: request.checkpointID)
     }
 
     static func fileName(id: String) -> String {
-        let sanitized = id.lowercased().map { character -> Character in
-            if character.isLetter || character.isNumber || character == "-" || character == "_" {
-                return character
-            }
-            return "-"
-        }
-        let collapsed = String(sanitized)
-            .split(separator: "-", omittingEmptySubsequences: true)
-            .joined(separator: "-")
-        let basename = collapsed.isEmpty ? "checkpoint" : collapsed
-        return "\(basename).json"
-    }
-
-    private var directoryURL: URL {
-        worktreeURL.appendingPathComponent(Self.relativeDirectory, isDirectory: true)
+        "\(WorkBatchArtifactCodec.sanitizedIdentifier(id, fallback: "checkpoint", maxLength: nil)).json"
     }
 }
 
@@ -119,43 +78,31 @@ struct WorkBatchCheckpointResponse: Codable, Equatable {
     }
 }
 
+/// Thin wrapper over `JSONDirectoryStore`. WRITE-ONLY: it BORROWS the checkpoint
+/// request filename rule (uncapped, fallback "checkpoint") and supplies no load
+/// predicate, so no read path exists — responses are consumed by the agent side.
 struct WorkBatchCheckpointResponseStore {
     static let relativeDirectory = ".capacitor/work-batch-checkpoint-responses"
 
-    private let worktreeURL: URL
-    private let fileManager: FileManager
+    private let store: JSONDirectoryStore<WorkBatchCheckpointResponse>
 
     init(
         worktreePath: String,
         fileManager: FileManager = .default,
     ) {
-        worktreeURL = URL(fileURLWithPath: worktreePath, isDirectory: true)
-        self.fileManager = fileManager
+        store = JSONDirectoryStore(
+            worktreePath: worktreePath,
+            fileManager: fileManager,
+            relativeDirectory: Self.relativeDirectory,
+            fileName: WorkBatchCheckpointRequestStore.fileName(id:),
+        )
     }
 
     func responseURL(checkpointID: String) -> URL {
-        directoryURL.appendingPathComponent(WorkBatchCheckpointRequestStore.fileName(id: checkpointID))
+        store.url(forID: checkpointID)
     }
 
     func write(_ response: WorkBatchCheckpointResponse) throws -> URL {
-        try? WorkBatchMetadataIgnoreInstaller.install(
-            in: worktreeURL.path,
-            fileManager: fileManager,
-        )
-        try fileManager.createDirectory(
-            at: directoryURL,
-            withIntermediateDirectories: true,
-        )
-
-        let url = responseURL(checkpointID: response.checkpointID)
-        let encoder = JSONEncoder()
-        encoder.dateEncodingStrategy = .iso8601
-        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
-        try encoder.encode(response).write(to: url, options: .atomic)
-        return url
-    }
-
-    private var directoryURL: URL {
-        worktreeURL.appendingPathComponent(Self.relativeDirectory, isDirectory: true)
+        try store.write(response, id: response.checkpointID)
     }
 }
