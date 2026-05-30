@@ -104,6 +104,11 @@ pub struct StatsCache {
 pub struct Project {
     pub name: String,
     pub path: String,
+    /// Canonical, git-aware workspace join key (MD5 of the resolved project
+    /// identity). Derived via the SAME `default_workspace_id` helper the
+    /// session/routing reducers use, so the Swift side can join the project
+    /// list against live session/routing state on this key.
+    pub workspace_id: String,
     pub display_path: String,
     pub last_active: Option<String>,
     pub claude_md_path: Option<String>,

@@ -31,21 +31,26 @@ pub fn prepare_decision(
     command: &MutateRunCommand,
     relay: Option<CheckpointDecisionRelay>,
 ) -> Result<Option<PreparedCheckpointBridgeDecision>, String> {
-    if command.kind != RunMutationKind::SubmitDecision {
+    let RunMutationKind::SubmitDecision {
+        checkpoint_id,
+        decision_action,
+        decision_note,
+    } = &command.kind
+    else {
         return Ok(None);
-    }
+    };
     if relay != Some(CheckpointDecisionRelay::CheckpointBridge) {
         return Ok(None);
     }
 
-    let checkpoint_id = match command.checkpoint_id.as_deref() {
+    let checkpoint_id = match checkpoint_id.as_deref() {
         Some(value) if !value.trim().is_empty() => value,
         _ => {
             return Err("missing checkpoint_id".to_string());
         }
     };
 
-    let action = match command.decision_action.as_deref() {
+    let action = match decision_action.as_deref() {
         Some(value) if !value.trim().is_empty() => value.trim().to_string(),
         _ => {
             return Err("missing decision_action".to_string());
@@ -84,7 +89,7 @@ pub fn prepare_decision(
         run_id: command.run_id.clone(),
         checkpoint_id: checkpoint_id.to_string(),
         action,
-        note: command.decision_note.clone(),
+        note: decision_note.clone(),
         decided_at: now_rfc3339(),
     };
     let decision_file = decision_path(home_dir, &command.run_id, checkpoint_id);

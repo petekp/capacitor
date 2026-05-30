@@ -160,8 +160,7 @@ final class WorkBatchStateTests: XCTestCase {
         let now = Date(timeIntervalSince1970: 1_775_000_000)
         let reasons: [WorkBatchAttentionReason] = [
             .none,
-            .duplicateCockpit(assignedProcessDuplicate: false),
-            .duplicateCockpit(assignedProcessDuplicate: true),
+            .duplicateCockpit,
             .pickupTimeout(taskID: "task-green", taskTitle: "Add green border"),
             .launchFailed,
             .wakeFailed,

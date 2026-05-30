@@ -8,10 +8,10 @@ use std::thread;
 use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
 
-use crate::common::read_http_request;
+use crate::common::{read_http_request, RunCommandBuilder, RunMutationKind};
 use capacitor_core::domain::{
     CheckpointDecisionRelay, CheckpointKind, MediaArtifact, MediaArtifactType, MermaidSource,
-    MutateRunCommand, RunMutationKind,
+    MutateRunCommand, RunMutationKind as RealRunMutationKind,
 };
 use capacitor_core::method_runner::adapters::{
     FakeInteractiveIO, FakePromptBuilder, FakeWorkerDispatcher, GateCheckpointContext,
@@ -465,80 +465,30 @@ fn wait_for(description: &str, timeout: Duration, mut predicate: impl FnMut() ->
     }
 }
 
-fn runtime_create_cmd(project_path: &str, run_id: &str, method_id: &str) -> MutateRunCommand {
-    MutateRunCommand {
-        kind: RunMutationKind::Create,
+fn runtime_create_cmd(project_path: &str, run_id: &str, method_id: &str) -> RunCommandBuilder {
+    RunCommandBuilder {
         project_path: project_path.to_string(),
         run_id: run_id.to_string(),
         method_id: Some(method_id.to_string()),
-        involvement: None,
-        checkpoint_kind: None,
-        checkpoint_title: None,
-        checkpoint_summary: None,
-        checkpoint_brief_path: None,
-        checkpoint_manifest_path: None,
-        checkpoint_media_artifacts: vec![],
-        checkpoint_mermaid_sources: vec![],
-        checkpoint_decision_relay: None,
-        capture_url: None,
-        checkpoint_id: None,
-        capture_request_id: None,
-        client_id: None,
-        observed_capture_url: None,
-        capture_failure_reason: None,
-        decision_action: None,
-        decision_note: None,
-        session_id: None,
-        delegation_worker_id: None,
-        status_message: None,
-        idea_id: None,
-        idea_title: None,
-        idea_description: None,
-        completed_media_artifacts: vec![],
+        ..RunCommandBuilder::default()
     }
 }
 
-fn runtime_base_cmd(project_path: &str, run_id: &str) -> MutateRunCommand {
-    MutateRunCommand {
-        kind: RunMutationKind::Create,
+fn runtime_base_cmd(project_path: &str, run_id: &str) -> RunCommandBuilder {
+    RunCommandBuilder {
         project_path: project_path.to_string(),
         run_id: run_id.to_string(),
-        method_id: None,
-        involvement: None,
-        checkpoint_kind: None,
-        checkpoint_title: None,
-        checkpoint_summary: None,
-        checkpoint_brief_path: None,
-        checkpoint_manifest_path: None,
-        checkpoint_media_artifacts: vec![],
-        checkpoint_mermaid_sources: vec![],
-        checkpoint_decision_relay: None,
-        capture_url: None,
-        checkpoint_id: None,
-        capture_request_id: None,
-        client_id: None,
-        observed_capture_url: None,
-        capture_failure_reason: None,
-        decision_action: None,
-        decision_note: None,
-        session_id: None,
-        delegation_worker_id: None,
-        status_message: None,
-        idea_id: None,
-        idea_title: None,
-        idea_description: None,
-        completed_media_artifacts: vec![],
+        ..RunCommandBuilder::default()
     }
 }
 
 fn runtime_mutate(
     runtime: &CoreRuntime,
-    mut command: MutateRunCommand,
+    command: RunCommandBuilder,
     kind: RunMutationKind,
 ) -> capacitor_core::domain::MutationOutcome {
-    command.kind = kind;
     runtime
-        .mutate_run(command)
+        .mutate_run(command.into_command(kind))
         .expect("runtime mutation should not error")
 }
 
@@ -599,32 +549,42 @@ fn t5_bridge_emits_runtime_mutation_and_pending_marker() {
 
     let command: MutateRunCommand =
         serde_json::from_str(&request.body).expect("parse mutate run command");
-    assert_eq!(command.kind, RunMutationKind::EmitCheckpoint);
     assert_eq!(command.run_id, "run-42");
     assert_eq!(command.project_path, project_path.to_string_lossy());
-    assert_eq!(command.checkpoint_id.as_deref(), Some("gate-review"));
+    let RealRunMutationKind::EmitCheckpoint {
+        checkpoint_kind,
+        checkpoint_title,
+        checkpoint_summary,
+        checkpoint_manifest_path,
+        checkpoint_media_artifacts,
+        checkpoint_mermaid_sources,
+        checkpoint_decision_relay,
+        checkpoint_id,
+        ..
+    } = &command.kind
+    else {
+        panic!("expected emit_checkpoint, got {:?}", command.kind);
+    };
+    assert_eq!(checkpoint_id.as_deref(), Some("gate-review"));
     assert_eq!(
-        command.checkpoint_kind,
+        *checkpoint_kind,
         Some(CheckpointKind::ImplementationMilestone)
     );
     assert_eq!(
-        command.checkpoint_decision_relay,
+        *checkpoint_decision_relay,
         Some(CheckpointDecisionRelay::CheckpointBridge)
     );
     assert_eq!(
-        command.checkpoint_manifest_path.as_deref(),
+        checkpoint_manifest_path.as_deref(),
         Some(manifest_path.to_string_lossy().as_ref())
     );
+    assert_eq!(checkpoint_title.as_deref(), Some("Review checkpoint"));
     assert_eq!(
-        command.checkpoint_title.as_deref(),
-        Some("Review checkpoint")
-    );
-    assert_eq!(
-        command.checkpoint_summary.as_deref(),
+        checkpoint_summary.as_deref(),
         Some("Confirm the bridge posts a checkpoint.")
     );
-    assert_eq!(command.checkpoint_media_artifacts.len(), 1);
-    assert_eq!(command.checkpoint_mermaid_sources.len(), 1);
+    assert_eq!(checkpoint_media_artifacts.len(), 1);
+    assert_eq!(checkpoint_mermaid_sources.len(), 1);
 
     let pending = pending_path(&home_dir, "run-42", "gate-review");
     assert!(
@@ -1048,11 +1008,10 @@ fn t13_bridge_crash_recovery_reemits_idempotently_and_returns_existing_decision_
     let project_path_string = project_path.to_string_lossy().to_string();
 
     let create = runtime
-        .mutate_run(runtime_create_cmd(
-            &project_path_string,
-            run_id,
-            "execution_only",
-        ))
+        .mutate_run(
+            runtime_create_cmd(&project_path_string, run_id, "execution_only")
+                .into_command(RunMutationKind::Create),
+        )
         .expect("create run");
     assert!(create.ok, "create failed: {}", create.message);
 

@@ -1972,6 +1972,7 @@ final class DelegationLoopManagerTests: XCTestCase {
         Project(
             name: "capacitor",
             path: path,
+            workspaceId: WorkspaceIdentity.fromPath(path),
             displayPath: path,
             lastActive: nil,
             claudeMdPath: nil,

@@ -22,16 +22,18 @@ pub enum RunStatusEventKind {
     Fail,
 }
 
-impl From<RunStatusEventKind> for RunMutationKind {
-    fn from(value: RunStatusEventKind) -> Self {
-        match value {
-            RunStatusEventKind::Start => Self::Start,
-            RunStatusEventKind::Heartbeat => Self::Heartbeat,
-            RunStatusEventKind::AdvancePhase => Self::AdvancePhase,
-            RunStatusEventKind::Pause => Self::Pause,
-            RunStatusEventKind::Resume => Self::Resume,
-            RunStatusEventKind::Complete => Self::Complete,
-            RunStatusEventKind::Fail => Self::Fail,
+impl RunStatusEventKind {
+    /// Build the typed [`RunMutationKind`] payload for this status event,
+    /// threading the optional `status_message` into the variants that carry it.
+    fn into_mutation_kind(self, status_message: Option<String>) -> RunMutationKind {
+        match self {
+            Self::Start => RunMutationKind::Start { status_message },
+            Self::Heartbeat => RunMutationKind::Heartbeat { status_message },
+            Self::AdvancePhase => RunMutationKind::AdvancePhase,
+            Self::Pause => RunMutationKind::Pause { status_message },
+            Self::Resume => RunMutationKind::Resume { status_message },
+            Self::Complete => RunMutationKind::Complete { status_message },
+            Self::Fail => RunMutationKind::Fail { status_message },
         }
     }
 }
@@ -86,34 +88,9 @@ impl RuntimeRunStatusReporter {
 
     fn command_for(&self, event: RunStatusEvent) -> MutateRunCommand {
         MutateRunCommand {
-            kind: event.kind.into(),
             project_path: self.project_path.to_string_lossy().into_owned(),
             run_id: self.run_id.clone(),
-            method_id: None,
-            involvement: None,
-            checkpoint_kind: None,
-            checkpoint_title: None,
-            checkpoint_summary: None,
-            checkpoint_brief_path: None,
-            checkpoint_manifest_path: None,
-            checkpoint_media_artifacts: Vec::new(),
-            checkpoint_mermaid_sources: Vec::new(),
-            checkpoint_decision_relay: None,
-            capture_url: None,
-            checkpoint_id: None,
-            capture_request_id: None,
-            client_id: None,
-            observed_capture_url: None,
-            capture_failure_reason: None,
-            decision_action: None,
-            decision_note: None,
-            session_id: None,
-            delegation_worker_id: None,
-            status_message: event.status_message,
-            idea_id: None,
-            idea_title: None,
-            idea_description: None,
-            completed_media_artifacts: Vec::new(),
+            kind: event.kind.into_mutation_kind(event.status_message),
         }
     }
 }

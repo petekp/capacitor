@@ -964,20 +964,34 @@ fn runtime_reporter_posts_mutate_commands_with_expected_mapping() {
     let command_e: MutateRunCommand =
         serde_json::from_str(&request_e.body).expect("parse complete command");
 
-    assert_eq!(command_a.kind, RunMutationKind::Start);
-    assert_eq!(command_a.status_message.as_deref(), Some("Run started"));
-    assert_eq!(command_b.kind, RunMutationKind::Heartbeat);
     assert_eq!(
-        command_b.status_message.as_deref(),
-        Some("Composing prompt")
+        command_a.kind,
+        RunMutationKind::Start {
+            status_message: Some("Run started".to_string()),
+        }
     );
-    assert_eq!(command_c.kind, RunMutationKind::Pause);
     assert_eq!(
-        command_c.status_message.as_deref(),
-        Some("Run blocked: gate rejected")
+        command_b.kind,
+        RunMutationKind::Heartbeat {
+            status_message: Some("Composing prompt".to_string()),
+        }
     );
-    assert_eq!(command_d.kind, RunMutationKind::Resume);
-    assert_eq!(command_d.status_message.as_deref(), Some("Run resumed"));
-    assert_eq!(command_e.kind, RunMutationKind::Complete);
-    assert!(command_e.status_message.is_none());
+    assert_eq!(
+        command_c.kind,
+        RunMutationKind::Pause {
+            status_message: Some("Run blocked: gate rejected".to_string()),
+        }
+    );
+    assert_eq!(
+        command_d.kind,
+        RunMutationKind::Resume {
+            status_message: Some("Run resumed".to_string()),
+        }
+    );
+    assert_eq!(
+        command_e.kind,
+        RunMutationKind::Complete {
+            status_message: None,
+        }
+    );
 }

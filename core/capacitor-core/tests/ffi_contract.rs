@@ -22,6 +22,7 @@ fn valid_shell_signal_command() -> IngestShellSignalCommand {
         tmux_client_tty: Some("/dev/ttys099".to_string()),
         tmux_pane: Some("%42".to_string()),
         tmux_panes: vec![],
+        proc_start: None,
         recorded_at: "2099-02-28T19:00:00Z".to_string(),
     }
 }
@@ -232,6 +233,7 @@ fn ffi_ingest_shell_signal_infers_attached_tmux_terminal_app_from_host_tty_evide
         tmux_pane: Some("%1".to_string()),
         tmux_panes: vec![],
         recorded_at: "2099-02-28T18:59:59Z".to_string(),
+        proc_start: None,
     };
     assert!(
         runtime
@@ -297,6 +299,7 @@ fn ffi_ingest_shell_signal_derives_non_active_tmux_pane_from_inventory() {
                 },
             ],
             recorded_at: "2099-02-28T19:00:00Z".to_string(),
+            proc_start: None,
         })
         .expect("shell signal outcome");
 
@@ -351,6 +354,7 @@ fn ffi_routing_inventory_preference_snapshot_prefers_inventory_for_mismatched_sh
                 },
             ],
             recorded_at: "2099-03-16T01:00:00Z".to_string(),
+            proc_start: None,
         })
         .expect("shell signal outcome");
 
@@ -401,6 +405,7 @@ fn ffi_routing_inventory_preference_resolve_prefers_inventory_for_hinted_mismatc
                 },
             ],
             recorded_at: "2099-03-16T01:00:01Z".to_string(),
+            proc_start: None,
         })
         .expect("shell signal outcome");
 
@@ -446,6 +451,7 @@ fn ffi_routing_inventory_preference_resolve_keeps_matching_shell_canonical() {
                 session_attached: true,
             }],
             recorded_at: "2099-03-16T01:00:02Z".to_string(),
+            proc_start: None,
         })
         .expect("shell signal outcome");
 

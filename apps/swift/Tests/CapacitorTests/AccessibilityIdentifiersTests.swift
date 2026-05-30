@@ -37,6 +37,7 @@ final class AccessibilityIdentifiersTests: XCTestCase {
         let project = Project(
             name: "Capacitor",
             path: "/Users/petepetrash/Code/capacitor",
+            workspaceId: WorkspaceIdentity.fromPath("/Users/petepetrash/Code/capacitor"),
             displayPath: "/Users/petepetrash/Code/capacitor",
             lastActive: nil,
             claudeMdPath: nil,

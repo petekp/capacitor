@@ -48,11 +48,12 @@ enum WorkBatchTaskStatus: String, Codable, Equatable {
 enum WorkBatchAttentionReason: Codable, Equatable {
     /// Steady state: no attention condition; presentation derives from facts.
     case none
-    /// Two or more Claude Code cockpits resolve to this batch's worktree.
-    /// `assignedProcessDuplicate` is the "same assigned session, duplicate
-    /// process" variant (the operator can simply re-enter), distinct from a
-    /// foreign duplicate (genuinely ambiguous, must be resolved).
-    case duplicateCockpit(assignedProcessDuplicate: Bool)
+    /// A FOREIGN-session ambiguity: two or more distinct Claude session-ids are
+    /// active in the Batch Worktree, so the binding is genuinely ambiguous and
+    /// must be resolved. Same-session duplicate-process detection was retired in
+    /// C5 — the runtime tracks exactly one PID per session-id, so a same-session
+    /// duplicate can never be derived from snapshot facts.
+    case duplicateCockpit
     /// A queued Task was delivered to a live cockpit that never claimed it
     /// inside the pickup window. `taskID`/`taskTitle` name the stuck Task.
     case pickupTimeout(taskID: String, taskTitle: String)
@@ -70,7 +71,6 @@ enum WorkBatchAttentionReason: Codable, Equatable {
 
     private enum CodingKeys: String, CodingKey {
         case kind
-        case assignedProcessDuplicate = "assigned_process_duplicate"
         case taskID = "task_id"
         case taskTitle = "task_title"
     }
@@ -98,9 +98,7 @@ enum WorkBatchAttentionReason: Codable, Equatable {
         case .none:
             self = .none
         case .duplicateCockpit:
-            let assignedProcessDuplicate = try container
-                .decodeIfPresent(Bool.self, forKey: .assignedProcessDuplicate) ?? false
-            self = .duplicateCockpit(assignedProcessDuplicate: assignedProcessDuplicate)
+            self = .duplicateCockpit
         case .pickupTimeout:
             let taskID = try container.decodeIfPresent(String.self, forKey: .taskID) ?? ""
             let taskTitle = try container.decodeIfPresent(String.self, forKey: .taskTitle) ?? ""
@@ -121,9 +119,8 @@ enum WorkBatchAttentionReason: Codable, Equatable {
         switch self {
         case .none:
             try container.encode(Kind.none, forKey: .kind)
-        case let .duplicateCockpit(assignedProcessDuplicate):
+        case .duplicateCockpit:
             try container.encode(Kind.duplicateCockpit, forKey: .kind)
-            try container.encode(assignedProcessDuplicate, forKey: .assignedProcessDuplicate)
         case let .pickupTimeout(taskID, taskTitle):
             try container.encode(Kind.pickupTimeout, forKey: .kind)
             try container.encode(taskID, forKey: .taskID)
@@ -848,12 +845,10 @@ enum WorkBatchProjectionBuilder {
         switch batch.attentionReason {
         case .none:
             break
-        case let .duplicateCockpit(assignedProcessDuplicate):
+        case .duplicateCockpit:
             return BatchPresentation(
                 status: status,
-                summary: assignedProcessDuplicate
-                    ? "Claude Code is already open; click to re-enter."
-                    : "Multiple Claude Code sessions match this Work Batch.",
+                summary: "Multiple Claude Code sessions match this Work Batch.",
             )
         case let .pickupTimeout(_, taskTitle):
             let title = taskTitle.trimmingCharacters(in: .whitespacesAndNewlines)

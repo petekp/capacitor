@@ -179,7 +179,6 @@ final class SessionStateManager {
     func applyRuntimeProjectStates(
         _ runtimeProjects: [RuntimeProjectState],
         sessions: [RuntimeSession] = [],
-        liveClaudeProcessesByProjectPath: [String: LiveClaudeProjectProcessEvidence] = [:],
         for projects: [Project],
         correlationId: String? = nil,
     ) {
@@ -192,7 +191,7 @@ final class SessionStateManager {
         applyRuntimeProjectStatesInternal(
             runtimeProjects,
             sessionIndex: sessionIndex,
-            liveClaudeProcessesByProjectPath: liveClaudeProcessesByProjectPath,
+            sessions: sessions,
             projects: projects,
             correlationId: cid,
             requestGeneration: applyGeneration,
@@ -207,7 +206,7 @@ final class SessionStateManager {
     private func applyRuntimeProjectStatesInternal(
         _ runtimeProjects: [RuntimeProjectState],
         sessionIndex: [String: RuntimeSession],
-        liveClaudeProcessesByProjectPath: [String: LiveClaudeProjectProcessEvidence],
+        sessions: [RuntimeSession],
         projects: [Project],
         correlationId: String,
         requestGeneration: UInt64,
@@ -215,7 +214,7 @@ final class SessionStateManager {
         let mergeResult = mergeRuntimeProjectStates(
             runtimeProjects,
             sessionIndex: sessionIndex,
-            liveClaudeProcessesByProjectPath: liveClaudeProcessesByProjectPath,
+            sessions: sessions,
             projects: projects,
             now: clock.now(),
             processLiveness: checkProcessLiveness,
@@ -498,7 +497,7 @@ final class SessionStateManager {
     private nonisolated func mergeRuntimeProjectStates(
         _ states: [RuntimeProjectState],
         sessionIndex: [String: RuntimeSession],
-        liveClaudeProcessesByProjectPath: [String: LiveClaudeProjectProcessEvidence],
+        sessions: [RuntimeSession],
         projects: [Project],
         now: Date,
         processLiveness: ProcessLivenessChecker,
@@ -512,16 +511,23 @@ final class SessionStateManager {
             guard !seen.contains(normalized) else { continue }
             seen.insert(normalized)
             let depth = normalized.split(separator: "/").count
+            // C2-Phase2 SWIFTJOIN (STEP 2b): JOIN on the Rust-provided, git-aware
+            // workspace key carried on the Project FFI record instead of
+            // recomputing the project-side key via GitRepositoryInfo /
+            // WorkspaceIdentity. The Rust `default_workspace_id` already resolved
+            // git identity for this project, so reading `project.workspaceId`
+            // converges the project-list key onto the SAME key the session/routing
+            // reducers emit. We still resolve `repoInfo` because the common-dir
+            // fallback in `matchesProject` and the repo-key index below depend on
+            // it as a safety net for stale-persisted state / residual mismatch.
             let repoInfo = GitRepositoryInfo.resolve(for: project.path)
-            let workspaceId = repoInfo.map { WorkspaceIdentity.fromGitInfo($0) }
-                ?? WorkspaceIdentity.fromPath(project.path)
             projectInfos.append(
                 ProjectMatchInfo(
                     project: project,
                     normalizedPath: normalized,
                     depth: depth,
                     repoInfo: repoInfo,
-                    workspaceId: workspaceId,
+                    workspaceId: project.workspaceId,
                 ),
             )
         }
@@ -640,11 +646,12 @@ final class SessionStateManager {
         var latestSessionIds: [String: String] = [:]
         for (projectPath, best) in bestStates {
             let state = best.state
-            let processEvidence = liveClaudeProcessEvidence(
-                for: projectPath,
-                in: liveClaudeProcessesByProjectPath,
-            )
-            let hasLiveProcess = processEvidence?.hasLiveProcess == true
+            // New OS-liveness projection: the per-session `osProcessAlive` fact
+            // (OS-probed by the hud-hook sweep, DISTINCT from event-decay
+            // `isAlive`) tells us the matched runtime session still has a live
+            // OS process. `nil` means not-yet-probed and is treated as unknown,
+            // never as proof of a live process.
+            let hasLiveProcess = best.representativeSession?.osProcessAlive == true
             var mappedState = normalizedRuntimeState(
                 state,
                 pid: best.representativePid,
@@ -661,7 +668,7 @@ final class SessionStateManager {
                 state: mappedState,
                 stateChangedAt: state.stateChangedAt,
                 updatedAt: state.updatedAt,
-                sessionId: state.sessionId ?? processEvidence?.firstSessionID,
+                sessionId: state.sessionId,
                 workingOn: nil,
                 context: nil,
                 thinking: nil,
@@ -677,24 +684,25 @@ final class SessionStateManager {
             )
             if let latestId = state.latestSessionId ?? state.sessionId {
                 latestSessionIds[projectPath] = latestId
-            } else if let processSessionId = processEvidence?.firstSessionID {
-                latestSessionIds[projectPath] = processSessionId
             }
         }
 
         for info in projectInfos where merged[info.project.path] == nil {
-            guard let processEvidence = liveClaudeProcessEvidence(
-                for: info.project.path,
-                in: liveClaudeProcessesByProjectPath,
-            ), processEvidence.hasLiveProcess else { continue }
+            // New OS-liveness fallback: a manually opened Claude cockpit may exist
+            // before hook/runtime project state arrives, but the OS sweep can still
+            // attribute a live process to a session sitting inside this project.
+            // Show it as Ready without inventing durable Rust state.
+            guard let liveSession = processLiveSession(
+                for: info,
+                in: sessions,
+                homeNormalized: homeNormalized,
+            ) else { continue }
 
-            // New live-process fallback: a manually opened Claude cockpit may exist before
-            // hook/runtime events arrive. Show it as Ready without inventing durable Rust state.
             merged[info.project.path] = ProjectSessionState(
                 state: .ready,
                 stateChangedAt: nil,
                 updatedAt: nil,
-                sessionId: processEvidence.firstSessionID,
+                sessionId: liveSession.sessionId,
                 workingOn: nil,
                 context: nil,
                 thinking: nil,
@@ -705,28 +713,49 @@ final class SessionStateManager {
             attributions[info.project.path] = SessionAttribution(
                 scope: .liveProcess,
                 sourceProjectPath: info.project.path,
-                sourceSessionId: processEvidence.firstSessionID,
+                sourceSessionId: liveSession.sessionId,
             )
-            if let processSessionId = processEvidence.firstSessionID {
-                latestSessionIds[info.project.path] = processSessionId
-            }
+            latestSessionIds[info.project.path] = liveSession.sessionId
         }
 
         return MergeResult(states: merged, attributions: attributions, latestSessionIds: latestSessionIds)
     }
 
-    private nonisolated func liveClaudeProcessEvidence(
-        for projectPath: String,
-        in evidenceByProjectPath: [String: LiveClaudeProjectProcessEvidence],
-    ) -> LiveClaudeProjectProcessEvidence? {
-        if let exact = evidenceByProjectPath[projectPath] {
-            return exact
+    /// Finds the deepest-matching runtime session with a live OS process
+    /// (`osProcessAlive == true`) whose cwd/project path sits inside this
+    /// project. Used by the manual-cockpit fallback: a Claude process can be
+    /// alive in a project's tree before any durable runtime project state lands.
+    private nonisolated func processLiveSession(
+        for info: ProjectMatchInfo,
+        in sessions: [RuntimeSession],
+        homeNormalized: String,
+    ) -> RuntimeSession? {
+        sessions.first { session in
+            session.osProcessAlive == true &&
+                sessionPathIsInsideProject(
+                    session,
+                    project: info,
+                    homeNormalized: homeNormalized,
+                )
         }
+    }
 
-        let normalizedProjectPath = PathNormalizer.normalize(projectPath)
-        return evidenceByProjectPath.first {
-            PathNormalizer.normalize($0.key) == normalizedProjectPath
-        }?.value
+    private nonisolated func sessionPathIsInsideProject(
+        _ session: RuntimeSession,
+        project: ProjectMatchInfo,
+        homeNormalized: String,
+    ) -> Bool {
+        let projectNormalized = project.normalizedPath
+        guard !projectNormalized.isEmpty, projectNormalized != homeNormalized else {
+            return false
+        }
+        for candidate in [session.cwd, session.projectPath] {
+            let normalized = PathNormalizer.normalize(candidate)
+            if normalized == projectNormalized || normalized.hasPrefix(projectNormalized + "/") {
+                return true
+            }
+        }
+        return false
     }
 
     private nonisolated func matchesProject(

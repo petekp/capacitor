@@ -102,13 +102,37 @@ pub(crate) fn normalize_path_for_matching(path: &str) -> String {
 
 #[must_use]
 pub(crate) fn default_workspace_id(project_path: &str) -> String {
-    workspace_id(project_path, project_path)
+    // C2-Phase2 RECONCILE (STEP 1): make the project-list key GIT-AWARE so it
+    // converges to the session/routing key. The session/routing reducers derive
+    // their workspace_id by first resolving project identity (git common_dir +
+    // repo_root) and then hashing via `workspace_id`. Deriving the project-list
+    // key by hashing the raw path twice (`workspace_id(path, path)`) forked a git
+    // project into two keys (`repo|repo` vs `repo/.git|`), so a pinned project
+    // could miss its live session state unless a runtime path-containment
+    // fallback rescued it. Resolving identity here first makes the project-list
+    // key equal the session key for the same project.
+    //
+    // When the path does not resolve to a project boundary (e.g. it does not
+    // exist on disk, as in the deterministic corpus rows), we fall back to the
+    // raw path as both project_id and project_path — identical to the historical
+    // behavior — so non-git inputs keep their stable, FS-independent key.
+    match resolve_project_identity(project_path) {
+        Some(identity) => workspace_id(&identity.project_id, &identity.project_path),
+        None => workspace_id(project_path, project_path),
+    }
 }
 
 #[must_use]
 pub(crate) fn workspace_id(project_id: &str, project_path: &str) -> String {
-    let project_id = canonicalize_path(Path::new(project_id));
-    let project_path = canonicalize_path(Path::new(project_path));
+    // C2-Phase2 RECONCILE (STEP 1b): normalize the inputs (trim trailing slashes,
+    // lowercase on macOS) BEFORE canonicalize/hash so a trailing slash or
+    // double-trailing-slash cannot fork the workspace_id. This converges the
+    // trailing_slash / double_trailing_slash corpus rows onto the plain_abs key
+    // and matches the Swift side, which normalizes first.
+    let project_id = normalize_path_for_matching(project_id);
+    let project_path = normalize_path_for_matching(project_path);
+    let project_id = canonicalize_path(Path::new(&project_id));
+    let project_path = canonicalize_path(Path::new(&project_path));
     let relative = workspace_relative_path(&project_id, &project_path);
     let source = format!("{}|{}", project_id.to_string_lossy(), relative);
 
@@ -430,44 +454,36 @@ mod tests {
         assert_eq!(first, second);
     }
 
-    /// HAZARD PIN (C2-Phase2, DEFERRED). For the SAME git project, the pinned-project-list
-    /// key derived via `default_workspace_id(repo_path)` (NO git resolution) does NOT equal
-    /// the git-aware `workspace_id(common_dir, repo_path)`.
+    /// C2-Phase2 RECONCILED (was the DEFERRED hazard pin). For the SAME git project, the
+    /// pinned-project-list key derived via `default_workspace_id(repo_path)` now AGREES with
+    /// the git-aware `workspace_id(common_dir, repo_path)` because `default_workspace_id`
+    /// resolves project identity (git common_dir + repo_root) before hashing.
     ///
-    /// - `default_workspace_id("/Users/pete/Code/myrepo")` hashes
-    ///   source `"/users/pete/code/myrepo|/users/pete/code/myrepo"`.
-    /// - git-aware `workspace_id("/Users/pete/Code/myrepo/.git", "/Users/pete/Code/myrepo")`
-    ///   hashes source `"/users/pete/code/myrepo/.git|"` (repo_root_from_project_id strips the
-    ///   `.git`, making the relative path empty).
-    ///
-    /// Different source strings -> different MD5 -> a project keyed one way MISSES state keyed
-    /// the other way unless a runtime path-containment fallback rescues it. This test PINS the
-    /// current (divergent) behavior so C2-Phase2 convergence has a guardrail; when Phase2
-    /// reconciles the two derivations, this assertion is the one that must be updated.
+    /// This mirrors the corpus `rust_internal_divergence` block, which now records
+    /// `they_match: true` against the converged git-aware value. It uses a live tmpdir
+    /// because the convergence only fires when `.git` exists on disk for
+    /// `resolve_project_identity` to detect (the static literal paths the former pin used
+    /// could not converge, since neither path existed for git resolution to fire).
     #[test]
-    fn default_workspace_id_differs_from_git_aware_for_same_project_c2_phase2_hazard() {
-        let repo_path = "/Users/pete/Code/myrepo";
-        let git_common_dir = "/Users/pete/Code/myrepo/.git";
+    fn default_workspace_id_agrees_with_git_aware_for_same_project_c2_phase2() {
+        let temp_dir = tempfile::tempdir().expect("temp dir");
+        let repo_root = temp_dir.path().join("myrepo");
+        let repo_git = repo_root.join(".git");
+        std::fs::create_dir_all(&repo_git).expect("create git dir");
+        std::fs::write(repo_root.join("CLAUDE.md"), "# repo").expect("project marker");
 
-        let default_key = default_workspace_id(repo_path);
-        let git_aware_key = workspace_id(git_common_dir, repo_path);
+        let repo_path = repo_root.to_string_lossy().to_string();
+        let identity = resolve_project_identity(&repo_path).expect("repo identity");
 
-        // Current (pinned) behavior: the two keys for the SAME project DIVERGE.
-        assert_ne!(
+        let default_key = default_workspace_id(&repo_path);
+        let git_aware_key = workspace_id(&identity.project_id, &identity.project_path);
+
+        // Reconciled behavior: the two keys for the SAME project now AGREE.
+        assert_eq!(
             default_key, git_aware_key,
-            "C2-Phase2 hazard resolved? default_workspace_id and git-aware workspace_id now \
-             AGREE for the same project. Update this test and the corpus \
-             rust_internal_divergence block to reflect the converged behavior."
-        );
-
-        // Pin the exact current values so any silent change in either derivation is loud.
-        assert_eq!(
-            default_key, "5d699b305e97dd1568da5aaf1ec9a3ab",
-            "default_workspace_id(repo_path) drifted"
-        );
-        assert_eq!(
-            git_aware_key, "cca950078b6f57529eb688528c2a4d7d",
-            "git-aware workspace_id(common_dir, repo_path) drifted"
+            "C2-Phase2 regression: default_workspace_id and git-aware workspace_id diverged \
+             again for the same project. The project-list key must stay git-aware so a pinned \
+             project joins session state without relying on path-containment fallbacks."
         );
     }
 
@@ -511,6 +527,47 @@ mod tests {
             workspace_id(&link_str, &link_str),
             workspace_id(&target_str, &target_str),
             "workspace_id should canonicalize the symlink so link and target collide"
+        );
+    }
+
+    /// C2-Phase2 RECONCILE convergence proof (live tmpdir).
+    ///
+    /// For the SAME real git project, the project-list key derived via
+    /// `default_workspace_id(repo_path)` MUST equal the git-aware
+    /// `workspace_id(common_dir, repo_path)` that the session/routing reducers
+    /// compute through `resolve_project_identity`. Before STEP 1 these DIVERGE
+    /// (default_workspace_id hashed `repo|repo` while the git-aware key hashed
+    /// `repo/.git|`), so a pinned project keyed one way MISSED session state
+    /// keyed the other way unless a runtime path-containment fallback rescued it.
+    ///
+    /// This is the RED-before / GREEN-after guardrail for the convergence: it is
+    /// RED while `default_workspace_id` ignores git, and GREEN once it resolves
+    /// project identity first. It uses a live tmpdir because the convergence only
+    /// fires when `.git` actually exists on disk for `resolve_project_identity`
+    /// to detect (the static corpus rows use non-existent paths by design).
+    #[test]
+    fn default_workspace_id_converges_to_git_aware_for_same_project() {
+        let temp_dir = tempfile::tempdir().expect("temp dir");
+        let repo_root = temp_dir.path().join("myrepo");
+        let repo_git = repo_root.join(".git");
+        std::fs::create_dir_all(&repo_git).expect("create git dir");
+        std::fs::write(repo_root.join("CLAUDE.md"), "# repo").expect("project marker");
+
+        let repo_path = repo_root.to_string_lossy().to_string();
+
+        // The git-aware key the session/routing reducers derive: resolve identity
+        // (project_id = .git common_dir, project_path = repo_root) then hash.
+        let identity = resolve_project_identity(&repo_path).expect("repo identity");
+        let git_aware_key = workspace_id(&identity.project_id, &identity.project_path);
+
+        // The project-list key: default_workspace_id(repo_path). Post-STEP-1 this
+        // must internally resolve git identity and produce the SAME key.
+        let default_key = default_workspace_id(&repo_path);
+
+        assert_eq!(
+            default_key, git_aware_key,
+            "C2-Phase2 convergence: default_workspace_id(repo_path) must equal the \
+             git-aware workspace_id(common_dir, repo_path) for the same git project"
         );
     }
 

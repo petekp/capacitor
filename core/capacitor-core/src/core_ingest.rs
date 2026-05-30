@@ -75,8 +75,8 @@ impl CoreRuntime {
         let project_path = command.project_path.trim();
         let run_id = command.run_id.trim();
         let Some(checkpoint_id) = command
-            .checkpoint_id
-            .as_deref()
+            .kind
+            .checkpoint_id()
             .map(str::trim)
             .filter(|value| !value.is_empty())
         else {
@@ -113,6 +113,16 @@ impl CoreRuntime {
     ) -> Result<MutationOutcome, CoreRuntimeError> {
         let normalized = ingest::normalize_shell_signal(command);
         self.commit(|state| state.apply_shell_signal(normalized))
+    }
+
+    /// Pure OS-liveness ingest. The caller (hud-hook sweep) owns the sysinfo
+    /// probe and supplies the per-PID facts; this path only records them onto
+    /// matching sessions via the pure reducer. It performs no OS calls itself.
+    pub fn ingest_os_liveness(
+        &self,
+        command: IngestOsLivenessCommand,
+    ) -> Result<MutationOutcome, CoreRuntimeError> {
+        self.commit(|state| state.apply_os_liveness(command))
     }
 
     pub fn mutate_project(

@@ -4,9 +4,10 @@ use chrono::{DateTime, Duration, Utc};
 
 use crate::domain::{
     AppSnapshot, DiagnosticsSummary, HookEventType, IngestHookEventCommand,
-    IngestShellSignalCommand, MutateDelegationCommand, MutateProjectCommand, MutateRunCommand,
-    MutationOutcome, ProjectDelegationState, ProjectSummary, ResolveRoutingCommand, RoutingView,
-    RunState, SessionSummary, ShellSignal, ShellUnregisterCommand, SignalAuthority, StateSource,
+    IngestOsLivenessCommand, IngestShellSignalCommand, MutateDelegationCommand,
+    MutateProjectCommand, MutateRunCommand, MutationOutcome, ProjectDelegationState,
+    ProjectSummary, ResolveRoutingCommand, RoutingView, RunState, SessionSummary, ShellSignal,
+    ShellUnregisterCommand, SignalAuthority, StateSource,
 };
 use crate::observation::transcript::TranscriptDiscovery;
 
@@ -193,6 +194,14 @@ impl ReducerState {
     }
 
     #[must_use]
+    pub(crate) fn apply_os_liveness(
+        &mut self,
+        command: IngestOsLivenessCommand,
+    ) -> MutationOutcome {
+        event_handler::apply_os_liveness(self, command)
+    }
+
+    #[must_use]
     pub(crate) fn apply_transcript_discovery(
         &mut self,
         discovery: TranscriptDiscovery,
@@ -252,6 +261,8 @@ impl ReducerState {
                 last_authoritative_event_at: None,
                 is_alive: false,
                 gc_reason: None,
+                process_start_time: None,
+                os_process_alive: None,
             };
             self.sessions.insert(discovery.session_id, session);
         }

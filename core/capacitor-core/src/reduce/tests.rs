@@ -111,6 +111,7 @@ fn shell_signal_fixture(pid: u32, cwd: &str) -> ShellSignal {
         tmux_client_tty: Some("/dev/ttys099".to_string()),
         tmux_pane: Some(format!("%{pid}")),
         tmux_panes: vec![],
+        proc_start: None,
         updated_at: format!("2099-03-16T00:00:{:02}Z", pid % 60),
     }
 }
@@ -141,6 +142,8 @@ fn session_summary_fixture(
         last_authoritative_event_at: None,
         is_alive: false,
         gc_reason: None,
+        process_start_time: None,
+        os_process_alive: None,
     }
 }
 
@@ -1139,6 +1142,7 @@ fn reducer_tracks_shell_signals() {
         tmux_pane: Some("%42".to_string()),
         tmux_panes: vec![],
         recorded_at: "2099-02-28T00:00:00Z".to_string(),
+        proc_start: None,
     });
 
     assert!(outcome.ok);
@@ -1975,6 +1979,7 @@ fn routing_prefers_tmux_pane_targets_for_matching_shells() {
         tmux_pane: Some("%42".to_string()),
         tmux_panes: vec![],
         recorded_at: "2099-02-28T00:00:00Z".to_string(),
+        proc_start: None,
     });
 
     let snapshot = state.snapshot();
@@ -2007,6 +2012,7 @@ fn routing_parity_matches_persisted_attached_tmux_pane_from_active_shell_evidenc
         tmux_pane: Some("%42".to_string()),
         tmux_panes: vec![],
         recorded_at: "2099-02-28T00:00:00Z".to_string(),
+        proc_start: None,
     });
 
     assert_persisted_routing_matches_resolved_routing(&mut state, "/repo");
@@ -2027,6 +2033,7 @@ fn routing_falls_back_to_tmux_session_when_pane_missing() {
         tmux_pane: None,
         tmux_panes: vec![],
         recorded_at: "2099-02-28T00:00:00Z".to_string(),
+        proc_start: None,
     });
 
     let route = state
@@ -2102,6 +2109,7 @@ fn routing_does_not_match_parent_directory_shells_to_descendant_projects() {
         tmux_pane: Some("%27".to_string()),
         tmux_panes: vec![],
         recorded_at: "2099-03-13T02:35:59Z".to_string(),
+        proc_start: None,
     });
     let _ = state.apply_shell_signal(IngestShellSignalCommand {
         pid: 4200,
@@ -2113,6 +2121,7 @@ fn routing_does_not_match_parent_directory_shells_to_descendant_projects() {
         tmux_pane: Some("%0".to_string()),
         tmux_panes: vec![],
         recorded_at: "2099-03-13T02:40:41Z".to_string(),
+        proc_start: None,
     });
 
     let snapshot = state.snapshot();
@@ -2158,6 +2167,7 @@ fn routing_still_matches_shells_inside_project_subdirectories() {
         tmux_pane: Some("%21".to_string()),
         tmux_panes: vec![],
         recorded_at: "2099-03-13T02:45:30Z".to_string(),
+        proc_start: None,
     });
 
     let route = state
@@ -2195,6 +2205,7 @@ fn routing_infers_attached_tmux_terminal_app_from_host_tty_shell_evidence() {
         tmux_pane: Some("%1".to_string()),
         tmux_panes: vec![],
         recorded_at: "2099-03-14T20:00:01Z".to_string(),
+        proc_start: None,
     });
     let _ = state.apply_shell_signal(IngestShellSignalCommand {
         pid: 4242,
@@ -2206,6 +2217,7 @@ fn routing_infers_attached_tmux_terminal_app_from_host_tty_shell_evidence() {
         tmux_pane: Some("%42".to_string()),
         tmux_panes: vec![],
         recorded_at: "2099-03-14T20:00:02Z".to_string(),
+        proc_start: None,
     });
 
     let route = state
@@ -2244,6 +2256,7 @@ fn routing_parity_matches_persisted_attached_tmux_terminal_app_inferred_from_hos
         tmux_pane: Some("%1".to_string()),
         tmux_panes: vec![],
         recorded_at: "2099-03-14T20:00:01Z".to_string(),
+        proc_start: None,
     });
     let _ = state.apply_shell_signal(IngestShellSignalCommand {
         pid: 4242,
@@ -2255,6 +2268,7 @@ fn routing_parity_matches_persisted_attached_tmux_terminal_app_inferred_from_hos
         tmux_pane: Some("%42".to_string()),
         tmux_panes: vec![],
         recorded_at: "2099-03-14T20:00:02Z".to_string(),
+        proc_start: None,
     });
 
     assert_persisted_routing_matches_resolved_routing(&mut state, "/tmp/core-project");
@@ -2294,6 +2308,7 @@ fn routing_derives_non_active_tmux_pane_from_inventory() {
             },
         ],
         recorded_at: "2099-03-15T03:00:01Z".to_string(),
+        proc_start: None,
     });
 
     let route = state
@@ -2345,6 +2360,7 @@ fn routing_parity_matches_persisted_non_active_tmux_pane_from_inventory() {
             },
         ],
         recorded_at: "2099-03-15T03:00:01Z".to_string(),
+        proc_start: None,
     });
 
     assert_persisted_routing_matches_resolved_routing(
@@ -2373,6 +2389,7 @@ fn routing_inventory_preference_matching_shell_beats_inventory() {
             session_attached: true,
         }],
         recorded_at: "2099-03-16T00:00:00Z".to_string(),
+        proc_start: None,
     });
 
     let route = persisted_route_for(&mut state, "/repo");
@@ -2665,6 +2682,7 @@ fn routing_inventory_preference_persisted_mismatched_shell_prefers_inventory() {
             },
         ],
         recorded_at: "2099-03-16T00:00:01Z".to_string(),
+        proc_start: None,
     });
 
     let route = persisted_route_for(&mut state, "/target");
@@ -2707,6 +2725,7 @@ fn routing_inventory_preference_hinted_mismatched_shell_prefers_inventory() {
             },
         ],
         recorded_at: "2099-03-16T00:00:02Z".to_string(),
+        proc_start: None,
     });
 
     let route = state.resolve_routing(ResolveRoutingCommand {
@@ -2746,6 +2765,7 @@ fn routing_inventory_preference_matching_shell_stays_canonical_for_activation() 
             session_attached: true,
         }],
         recorded_at: "2099-03-16T00:00:03Z".to_string(),
+        proc_start: None,
     });
 
     let route = state.resolve_routing(ResolveRoutingCommand {
@@ -2781,6 +2801,7 @@ fn routing_parity_matches_persisted_detached_terminal_app_route() {
         tmux_pane: None,
         tmux_panes: vec![],
         recorded_at: "2099-03-15T06:00:00Z".to_string(),
+        proc_start: None,
     });
 
     assert_persisted_routing_matches_resolved_routing(&mut state, "/repo");
@@ -2800,6 +2821,7 @@ fn routing_query_prefers_client_tty_match_for_untracked_project() {
         tmux_pane: None,
         tmux_panes: vec![],
         recorded_at: "2099-03-15T05:40:00Z".to_string(),
+        proc_start: None,
     });
 
     let _ = state.apply_shell_signal(IngestShellSignalCommand {
@@ -2812,6 +2834,7 @@ fn routing_query_prefers_client_tty_match_for_untracked_project() {
         tmux_pane: None,
         tmux_panes: vec![],
         recorded_at: "2099-03-15T05:40:01Z".to_string(),
+        proc_start: None,
     });
 
     let route = state.resolve_routing(ResolveRoutingCommand {
@@ -2842,6 +2865,7 @@ fn routing_query_falls_back_to_session_match_for_untracked_project() {
         tmux_pane: None,
         tmux_panes: vec![],
         recorded_at: "2099-03-15T05:41:00Z".to_string(),
+        proc_start: None,
     });
 
     let route = state.resolve_routing(ResolveRoutingCommand {
@@ -2872,6 +2896,7 @@ fn routing_query_prefers_exact_project_path_when_client_tty_unknown() {
         tmux_pane: None,
         tmux_panes: vec![],
         recorded_at: "2099-03-15T05:42:00Z".to_string(),
+        proc_start: None,
     });
 
     let _ = state.apply_shell_signal(IngestShellSignalCommand {
@@ -2884,6 +2909,7 @@ fn routing_query_prefers_exact_project_path_when_client_tty_unknown() {
         tmux_pane: None,
         tmux_panes: vec![],
         recorded_at: "2099-03-15T05:41:00Z".to_string(),
+        proc_start: None,
     });
 
     let route = state.resolve_routing(ResolveRoutingCommand {
@@ -2916,6 +2942,7 @@ fn routing_ignores_stale_shell_signal_for_same_pid() {
         tmux_pane: Some("%42".to_string()),
         tmux_panes: vec![],
         recorded_at: "2099-02-28T00:00:10Z".to_string(),
+        proc_start: None,
     });
 
     let outcome = state.apply_shell_signal(IngestShellSignalCommand {
@@ -2928,6 +2955,7 @@ fn routing_ignores_stale_shell_signal_for_same_pid() {
         tmux_pane: None,
         tmux_panes: vec![],
         recorded_at: "2099-02-28T00:00:00Z".to_string(),
+        proc_start: None,
     });
 
     assert!(outcome.ok);
@@ -3126,6 +3154,7 @@ fn shell_cwd_match_does_not_affect_liveness() {
         tmux_pane: None,
         tmux_panes: vec![],
         recorded_at: (now - Duration::seconds(30)).to_rfc3339(),
+        proc_start: None,
     });
     assert!(outcome.ok, "{outcome:?}");
 
@@ -3346,6 +3375,7 @@ fn routing_deprioritizes_managed_worktree_shell_over_project_root_shell() {
             session_attached: true,
         }],
         recorded_at: "2099-03-25T10:00:00Z".to_string(),
+        proc_start: None,
     });
 
     // Delegation shell in managed worktree (more recent)
@@ -3365,6 +3395,7 @@ fn routing_deprioritizes_managed_worktree_shell_over_project_root_shell() {
             session_attached: true,
         }],
         recorded_at: "2099-03-25T12:00:00Z".to_string(),
+        proc_start: None,
     });
 
     let route = state.resolve_routing(ResolveRoutingCommand {
@@ -3410,6 +3441,7 @@ fn routing_resolved_route_is_unavailable_when_only_managed_worktree_candidate_ex
             session_attached: true,
         }],
         recorded_at: "2099-03-25T12:00:00Z".to_string(),
+        proc_start: None,
     });
 
     let route = state.resolve_routing(ResolveRoutingCommand {
@@ -3447,6 +3479,7 @@ fn routing_activation_query_ignores_managed_worktree_only_shell() {
             session_attached: true,
         }],
         recorded_at: "2099-03-25T12:00:00Z".to_string(),
+        proc_start: None,
     });
 
     let route = state.resolve_routing(ResolveRoutingCommand {
@@ -4744,6 +4777,8 @@ fn snapshot_gc_ready_session_uses_correct_anchor() {
             last_authoritative_event_at: None,
             is_alive: false,
             gc_reason: None,
+            process_start_time: None,
+            os_process_alive: None,
         };
         let survivor = session_summary_fixture(
             "idle-survivor-a",
@@ -4806,6 +4841,8 @@ fn snapshot_gc_ready_session_uses_correct_anchor() {
             last_authoritative_event_at: None,
             is_alive: false,
             gc_reason: None,
+            process_start_time: None,
+            os_process_alive: None,
         };
         let survivor = session_summary_fixture(
             "idle-survivor-b",
@@ -4868,6 +4905,8 @@ fn snapshot_gc_ready_session_uses_correct_anchor() {
             last_authoritative_event_at: None,
             is_alive: false,
             gc_reason: None,
+            process_start_time: None,
+            os_process_alive: None,
         };
         let survivor = session_summary_fixture(
             "idle-survivor-c",
@@ -4975,6 +5014,92 @@ fn recompute_projects_normalizes_path_variants() {
     assert_eq!(
         project.session_count, 2,
         "Both sessions should be counted under the single project"
+    );
+}
+
+/// C2-Phase2 RECONCILE detachment tripwire (live tmpdir git repo).
+///
+/// A pinned project and an ingested session for the SAME git repo path must
+/// resolve to the SAME `workspace_id`, AND the project<->session-state join must
+/// land (the pinned project carries the session's state and count). The
+/// project-list key is derived via `default_workspace_id` (project.rs) while the
+/// session key is derived git-aware via `resolve_project_identity` +
+/// `workspace_id` (session.rs). If those two derivations fork, a pinned project
+/// silently detaches from its live sessions (it never adopts their state) unless
+/// a runtime path-containment fallback rescues it.
+///
+/// This is the safety net that must STAY GREEN through the convergence: it passes
+/// today (the project<->session join keys on normalized project_path, and the
+/// pre-fix fallback still attaches state) and must keep passing after STEP 1
+/// makes `default_workspace_id` git-aware. Its stronger assertion — that the
+/// pinned project and the session agree on `workspace_id` — is RED-leaning before
+/// the fix for a git repo and GREEN after.
+#[test]
+fn pinned_project_and_session_share_workspace_id_and_join() {
+    let temp_dir = tempfile::tempdir().expect("temp dir");
+    let repo_root = temp_dir.path().join("myrepo");
+    let repo_git = repo_root.join(".git");
+    std::fs::create_dir_all(&repo_git).expect("create git dir");
+    std::fs::write(repo_root.join("CLAUDE.md"), "# repo").expect("project marker");
+    let repo_path = repo_root.to_string_lossy().to_string();
+
+    let mut state = routing_state_fixture(vec![], vec![]);
+
+    // Pin the project (project-list key derivation site, reduce/project.rs).
+    let outcome = state.apply_project_mutation(crate::domain::MutateProjectCommand {
+        kind: crate::domain::ProjectMutationKind::Add,
+        project_path: repo_path.clone(),
+        display_name: None,
+    });
+    assert!(outcome.ok, "project pin failed: {}", outcome.message);
+
+    // Ingest a session (hook event) for the SAME git repo path.
+    let mut event = event_base(HookEventType::PreToolUse);
+    event.session_id = "session-git".to_string();
+    event.project_path = repo_path.clone();
+    event.cwd = Some(repo_path.clone());
+    let outcome = state.apply_hook_event(event);
+    assert!(outcome.ok, "hook ingest failed: {}", outcome.message);
+
+    let snapshot = state.snapshot();
+
+    let session = snapshot
+        .sessions
+        .iter()
+        .find(|s| s.session_id == "session-git")
+        .expect("session present");
+    let project = snapshot
+        .projects
+        .iter()
+        .find(|p| p.project_path == session.project_path)
+        .expect("pinned project joins on normalized project_path");
+
+    // The detachment tripwire: identical workspace_id across the project-list key
+    // and the session/routing key for the same git project.
+    assert_eq!(
+        project.workspace_id, session.workspace_id,
+        "pinned project workspace_id must equal the session workspace_id for the same git project"
+    );
+
+    // The project<->session-state join must land: the pinned project adopts the
+    // session's active state and counts it.
+    assert_eq!(
+        project.session_count, 1,
+        "pinned project must count the ingested session"
+    );
+    assert!(
+        project.has_session,
+        "pinned project must report it has a session"
+    );
+    assert!(
+        project.state.is_active(),
+        "pinned project must adopt the session's active state (got {:?})",
+        project.state
+    );
+    assert_eq!(
+        project.representative_session_id.as_deref(),
+        Some("session-git"),
+        "pinned project must elect the ingested session as representative"
     );
 }
 
@@ -5405,6 +5530,8 @@ fn snapshot_gc_transitions_sole_dead_session_to_idle() {
             last_authoritative_event_at: None,
             is_alive: false,
             gc_reason: None,
+            process_start_time: None,
+            os_process_alive: None,
         }],
         shells: vec![],
         routing: vec![],
@@ -5921,6 +6048,8 @@ fn snapshot_gc_preserves_recently_dead_sole_session() {
             last_authoritative_event_at: None,
             is_alive: false,
             gc_reason: None,
+            process_start_time: None,
+            os_process_alive: None,
         }],
         shells: vec![],
         routing: vec![],
@@ -6375,6 +6504,225 @@ fn test_gc_transitions_stale_to_idle_with_gc_reason() {
         survivor.gc_reason, None,
         "Idle survivor should not gain a gc_reason"
     );
+}
+
+mod os_liveness_contract_tests {
+    use super::*;
+    use crate::domain::{IngestOsLivenessCommand, OsLivenessEntry};
+
+    /// Build a session with an explicit pid + process_start_time so the sweep
+    /// reducer can match it. Other fields use the shared fixture defaults.
+    fn session_with_start(
+        session_id: &str,
+        pid: u32,
+        process_start_time: Option<u64>,
+    ) -> SessionSummary {
+        SessionSummary {
+            pid,
+            process_start_time,
+            ..session_summary_fixture(
+                session_id,
+                pid,
+                "/repo",
+                "/repo",
+                SessionState::Working,
+                "2099-03-01T00:00:00Z",
+            )
+        }
+    }
+
+    fn state_with_sessions(sessions: Vec<SessionSummary>) -> ReducerState {
+        let mut state = ReducerState::default();
+        for session in sessions {
+            state.sessions.insert(session.session_id.clone(), session);
+        }
+        state
+    }
+
+    /// A pure sweep over {alive pid, dead pid} records the OS fact on each.
+    #[test]
+    fn os_liveness_sweep_records_alive_and_dead() {
+        let mut state = state_with_sessions(vec![
+            session_with_start("alive", 100, Some(111)),
+            session_with_start("dead", 200, Some(222)),
+        ]);
+
+        let outcome = state.apply_os_liveness(IngestOsLivenessCommand {
+            entries: vec![
+                OsLivenessEntry {
+                    pid: 100,
+                    process_start_time: Some(111),
+                    alive: true,
+                },
+                OsLivenessEntry {
+                    pid: 200,
+                    process_start_time: None,
+                    alive: false,
+                },
+            ],
+            recorded_at: "2099-03-01T00:01:00Z".to_string(),
+        });
+        assert!(outcome.ok);
+
+        let alive = state.sessions.get("alive").expect("alive session");
+        assert_eq!(alive.os_process_alive, Some(true));
+
+        let dead = state.sessions.get("dead").expect("dead session");
+        assert_eq!(dead.os_process_alive, Some(false));
+    }
+
+    /// PID reuse: the session was started by process T1, but the sweep observes
+    /// a DIFFERENT process (T2) now occupying the same pid. The session is NOT
+    /// its old process, so os_process_alive must be Some(false).
+    #[test]
+    fn os_liveness_sweep_pid_reuse_is_not_alive() {
+        let mut state = state_with_sessions(vec![session_with_start("reused", 300, Some(1000))]);
+
+        let outcome = state.apply_os_liveness(IngestOsLivenessCommand {
+            entries: vec![OsLivenessEntry {
+                pid: 300,
+                // Same pid, different start time => a different process.
+                process_start_time: Some(2000),
+                alive: true,
+            }],
+            recorded_at: "2099-03-01T00:01:00Z".to_string(),
+        });
+        assert!(outcome.ok);
+
+        let reused = state.sessions.get("reused").expect("reused session");
+        assert_eq!(
+            reused.os_process_alive,
+            Some(false),
+            "pid reuse (start_time mismatch) must read as not-alive"
+        );
+    }
+
+    /// When the session has no stored start time, a matching live pid still
+    /// counts as alive (no discriminator to reject it). Defensive: not-yet
+    /// captured start time must not force false negatives for genuinely live
+    /// processes.
+    #[test]
+    fn os_liveness_sweep_missing_start_time_trusts_pid_match() {
+        let mut state = state_with_sessions(vec![session_with_start("no-start", 400, None)]);
+
+        let _ = state.apply_os_liveness(IngestOsLivenessCommand {
+            entries: vec![OsLivenessEntry {
+                pid: 400,
+                process_start_time: Some(9999),
+                alive: true,
+            }],
+            recorded_at: "2099-03-01T00:01:00Z".to_string(),
+        });
+
+        let session = state.sessions.get("no-start").expect("session");
+        assert_eq!(session.os_process_alive, Some(true));
+    }
+
+    /// The sweep must NOT touch event-decay `is_alive`; the two liveness notions
+    /// are distinct facts.
+    #[test]
+    fn os_liveness_sweep_leaves_is_alive_untouched() {
+        let mut session = session_with_start("keep-is-alive", 500, Some(5));
+        session.is_alive = true;
+        let mut state = state_with_sessions(vec![session]);
+
+        let _ = state.apply_os_liveness(IngestOsLivenessCommand {
+            entries: vec![OsLivenessEntry {
+                pid: 500,
+                process_start_time: Some(5),
+                alive: false,
+            }],
+            recorded_at: "2099-03-01T00:01:00Z".to_string(),
+        });
+
+        let session = state.sessions.get("keep-is-alive").expect("session");
+        assert!(
+            session.is_alive,
+            "event-decay is_alive must remain independent of the OS-liveness sweep"
+        );
+        assert_eq!(session.os_process_alive, Some(false));
+    }
+
+    /// Old snapshot JSON lacking the new fields decodes to None (serde default).
+    #[test]
+    fn back_compat_old_snapshot_decodes_new_fields_as_none() {
+        // A SessionSummary serialized before C5 — no process_start_time or
+        // os_process_alive keys, and also no proc_start on shells (covered
+        // separately below).
+        let legacy = r#"{
+            "session_id": "legacy-1",
+            "pid": 4242,
+            "cwd": "/repo",
+            "project_id": "/repo/.git",
+            "project_path": "/repo",
+            "workspace_id": "workspace-repo",
+            "state": "working",
+            "state_changed_at": "2099-03-01T00:00:00Z",
+            "updated_at": "2099-03-01T00:00:00Z",
+            "last_event": null,
+            "last_activity_at": null,
+            "tools_in_flight": 0,
+            "is_alive": true
+        }"#;
+
+        let session: SessionSummary =
+            serde_json::from_str(legacy).expect("legacy SessionSummary decodes");
+        assert_eq!(session.process_start_time, None);
+        assert_eq!(session.os_process_alive, None);
+        // Sanity: untouched fields still decode.
+        assert_eq!(session.pid, 4242);
+        assert!(session.is_alive);
+    }
+
+    /// Old ShellSignal JSON lacking proc_start decodes to None.
+    #[test]
+    fn back_compat_old_shell_signal_decodes_proc_start_as_none() {
+        let legacy = r#"{
+            "pid": 4242,
+            "cwd": "/repo",
+            "tty": "/dev/ttys001",
+            "parent_app": "ghostty",
+            "tmux_session": null,
+            "tmux_client_tty": null,
+            "updated_at": "2099-03-01T00:00:00Z"
+        }"#;
+
+        let shell: ShellSignal = serde_json::from_str(legacy).expect("legacy ShellSignal decodes");
+        assert_eq!(shell.proc_start, None);
+        assert_eq!(shell.pid, 4242);
+    }
+
+    /// proc_start flows from the shell signal command onto the matching
+    /// session's process_start_time via the hook-event upsert path.
+    #[test]
+    fn proc_start_flows_from_shell_signal_to_session() {
+        let mut state = ReducerState::default();
+
+        // Register a shell carrying a known proc_start.
+        let shell_outcome = state.apply_shell_signal(IngestShellSignalCommand {
+            pid: 1234,
+            cwd: "/repo".to_string(),
+            tty: "/dev/ttys001".to_string(),
+            parent_app: "ghostty".to_string(),
+            tmux_session: None,
+            tmux_client_tty: None,
+            tmux_pane: None,
+            tmux_panes: vec![],
+            proc_start: Some(42_000),
+            recorded_at: "2099-03-01T00:00:00Z".to_string(),
+        });
+        assert!(shell_outcome.ok);
+
+        // A hook event for the same pid should pick up the shell's proc_start.
+        let event = IngestHookEventCommand {
+            pid: Some(1234),
+            ..event_base(HookEventType::UserPromptSubmit)
+        };
+        let _ = state.apply_hook_event(event);
+
+        let session = state.sessions.get("session-1").expect("session");
+        assert_eq!(session.process_start_time, Some(42_000));
+    }
 }
 
 mod transcript_discovery_contract_tests {

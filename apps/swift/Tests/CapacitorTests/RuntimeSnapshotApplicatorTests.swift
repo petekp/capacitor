@@ -79,18 +79,13 @@ final class RuntimeSnapshotApplicatorTests: XCTestCase {
         XCTAssertEqual(fixture.runState.runStatesByID[RuntimeRunKey(run: run)], run)
     }
 
-    func testFreshSnapshotPassesLiveClaudeProcessEvidenceToSessionProjection() {
+    func testFreshSnapshotOsProcessAliveSessionProjectsReady() {
         let project = makeProject(path: "/tmp/capacitor")
-        let fixture = Fixture(liveClaudeProcessEvidenceProvider: { projects in
-            XCTAssertEqual(projects.map(\.path), [project.path])
-            return [
-                project.path: LiveClaudeProjectProcessEvidence(
-                    processCount: 1,
-                    sessionIDs: ["live-session"],
-                ),
-            ]
-        })
+        let fixture = Fixture()
 
+        // The snapshot's matched session carries the OS-liveness fact
+        // `osProcessAlive == true`, so an idle runtime state still projects Ready
+        // (the quiet-but-live cockpit stays visible).
         let outcome = fixture.applicator.apply(
             RuntimeSnapshot(
                 projectStates: [
@@ -108,7 +103,14 @@ final class RuntimeSnapshotApplicatorTests: XCTestCase {
                         hasSession: true,
                     ),
                 ],
-                sessions: [],
+                sessions: [
+                    makeRuntimeSession(
+                        sessionId: "runtime-session",
+                        projectPath: project.path,
+                        state: .idle,
+                        osProcessAlive: true,
+                    ),
+                ],
                 shellState: ShellCwdState(version: 1, shells: [:]),
                 routingViews: [],
                 delegations: [],
@@ -279,16 +281,12 @@ final class RuntimeSnapshotApplicatorTests: XCTestCase {
         )
     }
 
-    func testRepeatedNonzeroSnapshotVersionRefreshesLiveProcessEvidence() {
+    func testRepeatedNonzeroSnapshotVersionReappliesDurableStateWithFrozenOsLiveness() {
         let project = makeProject(path: "/tmp/capacitor")
-        var liveEvidence: [String: LiveClaudeProjectProcessEvidence] = [
-            project.path: LiveClaudeProjectProcessEvidence(
-                processCount: 1,
-                sessionIDs: ["live-session"],
-            ),
-        ]
-        let fixture = Fixture(liveClaudeProcessEvidenceProvider: { _ in liveEvidence })
+        let fixture = Fixture()
 
+        // The durable session carries the OS-liveness fact `osProcessAlive ==
+        // true`, so an idle runtime state projects Ready (quiet-but-live cockpit).
         let context = fixture.applicator.beginFetch(projects: [project])
         _ = fixture.applicator.apply(
             makeRuntimeSnapshot(
@@ -296,6 +294,14 @@ final class RuntimeSnapshotApplicatorTests: XCTestCase {
                 sessionId: "runtime-session",
                 shellCwd: "/baseline",
                 shellPid: "111",
+                runtimeSessions: [
+                    makeRuntimeSession(
+                        sessionId: "runtime-session",
+                        projectPath: project.path,
+                        state: .idle,
+                        osProcessAlive: true,
+                    ),
+                ],
                 changeVersion: 9,
                 state: "idle",
                 activeCount: 0,
@@ -305,7 +311,9 @@ final class RuntimeSnapshotApplicatorTests: XCTestCase {
 
         XCTAssertEqual(fixture.sessionStateManager.getSessionState(for: project)?.state, .ready)
 
-        liveEvidence = [:]
+        // A same-version refresh re-applies the LAST DURABLE project/session
+        // state (carrying the frozen `osProcessAlive` fact) and ignores the
+        // volatile incoming session changes, so the live cockpit stays Ready.
         let firstOutcome = fixture.applicator.apply(
             makeRuntimeSnapshot(
                 projectPath: project.path,
@@ -320,24 +328,8 @@ final class RuntimeSnapshotApplicatorTests: XCTestCase {
 
         XCTAssertEqual(firstOutcome.decision, .duplicateVersionNoop)
         XCTAssertEqual(firstOutcome.effects, [.updatePostSessionRefreshContext])
-        XCTAssertEqual(fixture.sessionStateManager.getSessionState(for: project)?.state, .ready)
-
-        let secondOutcome = fixture.applicator.apply(
-            makeRuntimeSnapshot(
-                projectPath: project.path,
-                sessionId: "changed-session-ignored",
-                shellCwd: "/changed-ignored",
-                shellPid: "111",
-                changeVersion: 9,
-                state: "working",
-            ),
-            context: context,
-        )
-
-        XCTAssertEqual(secondOutcome.decision, .duplicateVersionNoop)
-        XCTAssertEqual(secondOutcome.effects, [.updatePostSessionRefreshContext])
         let projectedState = fixture.sessionStateManager.getSessionState(for: project)
-        XCTAssertEqual(projectedState?.state, .idle)
+        XCTAssertEqual(projectedState?.state, .ready)
         XCTAssertEqual(projectedState?.sessionId, "runtime-session")
         XCTAssertEqual(fixture.shellStateStore.state?.shells["111"]?.cwd, "/baseline")
     }
@@ -487,7 +479,6 @@ final class RuntimeSnapshotApplicatorTests: XCTestCase {
 
         init(
             isDelegationLoopEnabled: Bool = true,
-            liveClaudeProcessEvidenceProvider: RuntimeSnapshotApplicator.LiveClaudeProcessEvidenceProvider? = nil,
         ) {
             applicator = RuntimeSnapshotApplicator(
                 sessionStateManager: sessionStateManager,
@@ -496,7 +487,6 @@ final class RuntimeSnapshotApplicatorTests: XCTestCase {
                 runState: runState,
                 uiState: uiState,
                 isDelegationLoopEnabled: { isDelegationLoopEnabled },
-                liveClaudeProcessEvidenceProvider: liveClaudeProcessEvidenceProvider ?? { _ in [:] },
             )
         }
     }
@@ -505,6 +495,7 @@ final class RuntimeSnapshotApplicatorTests: XCTestCase {
         Project(
             name: "Capacitor",
             path: path,
+            workspaceId: WorkspaceIdentity.fromPath(path),
             displayPath: path,
             lastActive: nil,
             claudeMdPath: nil,
@@ -579,13 +570,15 @@ final class RuntimeSnapshotApplicatorTests: XCTestCase {
     private func makeRuntimeSession(
         sessionId: String,
         projectPath: String,
+        state: SessionState = .working,
         gcReason: String? = nil,
+        osProcessAlive: Bool? = nil,
     ) -> RuntimeSession {
         let timestamp = "2026-03-05T00:00:00Z"
         return RuntimeSession(
             sessionId: sessionId,
             pid: 4242,
-            state: .working,
+            state: state,
             cwd: projectPath,
             projectId: nil,
             workspaceId: nil,
@@ -599,6 +592,7 @@ final class RuntimeSnapshotApplicatorTests: XCTestCase {
             lastAuthoritativeEventAt: nil,
             gcReason: gcReason,
             isAlive: true,
+            osProcessAlive: osProcessAlive,
         )
     }
 

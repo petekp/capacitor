@@ -843,6 +843,7 @@ final class AppStateRuntimeSnapshotEffectTests: XCTestCase {
         Project(
             name: "Capacitor",
             path: path,
+            workspaceId: WorkspaceIdentity.fromPath(path),
             displayPath: path,
             lastActive: nil,
             claudeMdPath: nil,
@@ -892,6 +893,7 @@ final class AppStateRuntimeSnapshotEffectTests: XCTestCase {
         state: String = "working",
         cwd: String,
         projectPath: String,
+        osProcessAlive: Bool? = nil,
     ) -> RuntimeSession {
         RuntimeSession(
             sessionId: sessionId,
@@ -910,6 +912,7 @@ final class AppStateRuntimeSnapshotEffectTests: XCTestCase {
             lastAuthoritativeEventAt: nil,
             gcReason: nil,
             isAlive: true,
+            osProcessAlive: osProcessAlive,
         )
     }
 

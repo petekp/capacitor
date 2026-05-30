@@ -424,7 +424,17 @@ fn read_http_response(stream: &mut TcpStream) -> (u16, String) {
 
         match stream.read(&mut buf[total..]) {
             Ok(0) => break,
-            Ok(n) => total += n,
+            Ok(n) => {
+                total += n;
+                // A single read may return less than a full TCP window even
+                // when more body bytes are coming. Once headers are present,
+                // keep reading until the declared Content-Length body has fully
+                // arrived rather than stopping at the first short read (which
+                // truncated larger snapshot payloads).
+                if response_is_complete(&buf[..total]) {
+                    break;
+                }
+            }
             Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => break,
             Err(error) if error.kind() == std::io::ErrorKind::TimedOut => break,
             Err(error) => panic!("read HTTP response: {error}"),
@@ -433,6 +443,34 @@ fn read_http_response(stream: &mut TcpStream) -> (u16, String) {
 
     let response = String::from_utf8_lossy(&buf[..total]).to_string();
     parse_http_response(&response)
+}
+
+/// Returns true once `bytes` contains a complete HTTP response: the full header
+/// block plus a body whose length matches the `Content-Length` header. Returns
+/// false while headers are incomplete or the body is still arriving. When no
+/// `Content-Length` header is present we cannot bound the body, so we report
+/// incomplete and let the read loop drain to EOF/timeout as before.
+fn response_is_complete(bytes: &[u8]) -> bool {
+    let text = String::from_utf8_lossy(bytes);
+    let Some(header_end) = text.find("\r\n\r\n") else {
+        return false;
+    };
+    let headers = &text[..header_end];
+    let body_start = header_end + 4;
+
+    let content_length = headers.lines().find_map(|line| {
+        let (name, value) = line.split_once(':')?;
+        if name.trim().eq_ignore_ascii_case("Content-Length") {
+            value.trim().parse::<usize>().ok()
+        } else {
+            None
+        }
+    });
+
+    match content_length {
+        Some(len) => bytes.len().saturating_sub(body_start) >= len,
+        None => false,
+    }
 }
 
 fn send_blocked_chunked_runtime_ingest_request(

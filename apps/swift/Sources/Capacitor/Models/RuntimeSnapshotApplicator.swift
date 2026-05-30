@@ -2,8 +2,6 @@ import Foundation
 
 @MainActor
 final class RuntimeSnapshotApplicator {
-    typealias LiveClaudeProcessEvidenceProvider = ([Project]) -> [String: LiveClaudeProjectProcessEvidence]
-
     struct RequestContext: Equatable {
         let generation: UInt64?
         let correlationId: String
@@ -40,7 +38,6 @@ final class RuntimeSnapshotApplicator {
     private let runState: RunStateStore
     private let uiState: UIState
     private let isDelegationLoopEnabled: () -> Bool
-    private let liveClaudeProcessEvidenceProvider: LiveClaudeProcessEvidenceProvider
 
     private var requestGeneration: UInt64 = 0
     private var correlationCounter: UInt64 = 0
@@ -57,7 +54,6 @@ final class RuntimeSnapshotApplicator {
         runState: RunStateStore,
         uiState: UIState,
         isDelegationLoopEnabled: @escaping () -> Bool,
-        liveClaudeProcessEvidenceProvider: LiveClaudeProcessEvidenceProvider? = nil,
     ) {
         self.sessionStateManager = sessionStateManager
         self.shellStateStore = shellStateStore
@@ -65,10 +61,6 @@ final class RuntimeSnapshotApplicator {
         self.runState = runState
         self.uiState = uiState
         self.isDelegationLoopEnabled = isDelegationLoopEnabled
-        let processScanner = WorkBatchClaudeProcessScanner()
-        self.liveClaudeProcessEvidenceProvider = liveClaudeProcessEvidenceProvider ?? { projects in
-            processScanner.processEvidenceByProjectPath(for: projects)
-        }
     }
 
     func beginFetch(projects: [Project]) -> RequestContext {
@@ -119,13 +111,14 @@ final class RuntimeSnapshotApplicator {
                     "AppState.refreshSessionStates source=runtime_snapshot_volatile_refresh cid=\(context.correlationId) version=\(snapshot.changeVersion)",
                 )
                 // New Work Batch/Claude-process projection: the runtime snapshot version
-                // protects durable service state, but live Claude process evidence is volatile.
-                // Re-apply the last durable project/session state with fresh process evidence
-                // so active cockpits can become Ready and then clear without a service version bump.
+                // protects durable service state, but OS-process liveness is volatile.
+                // Re-apply the last durable project/session state (the sessions carry
+                // the per-session `osProcessAlive` fact from the most recent sweep) so
+                // active cockpits can become Ready and then clear without a service
+                // version bump.
                 sessionStateManager.applyRuntimeProjectStates(
                     lastAppliedProjectStates,
                     sessions: lastAppliedSessions,
-                    liveClaudeProcessesByProjectPath: liveClaudeProcessEvidenceProvider(context.projects),
                     for: context.projects,
                     correlationId: context.correlationId,
                 )
@@ -137,7 +130,6 @@ final class RuntimeSnapshotApplicator {
         sessionStateManager.applyRuntimeProjectStates(
             snapshot.projectStates,
             sessions: snapshot.sessions,
-            liveClaudeProcessesByProjectPath: liveClaudeProcessEvidenceProvider(context.projects),
             for: context.projects,
             correlationId: context.correlationId,
         )

@@ -8,6 +8,16 @@ struct WorkBatchBindingReconciliationIssue: Equatable {
 
     let kind: Kind
     let batchID: String
+    /// Distinct FOREIGN Claude session ids observed live in the Batch Worktree
+    /// (the assigned cockpit id plus any others). Two or more distinct ids here
+    /// means an ambiguous duplicate cockpit that must block re-entry.
+    ///
+    /// NOTE: same-session OS-process duplicate detection was RETIRED in C5. The
+    /// runtime tracks exactly one PID per session id, so a same-session
+    /// duplicate count could never be derived from snapshot facts (it would
+    /// have been an exact alias for `osProcessAlive ? 1 : 0`). Foreign-session
+    /// duplicate detection (via `sessionIDs`) and process-backed liveness (via
+    /// `osProcessAlive`) are unaffected.
     let sessionIDs: [String]
     let message: String
 }
@@ -19,8 +29,6 @@ struct WorkBatchBindingReconciliationResult: Equatable {
 }
 
 enum WorkBatchBindingReconciler {
-    typealias ProcessSessionLookup = (WorkBatchCockpitBinding) -> [String]
-
     static let defaultLaunchGrace: TimeInterval = 90
 
     static func reconcile(
@@ -29,7 +37,6 @@ enum WorkBatchBindingReconciler {
         sessions: [RuntimeSession],
         now: Date,
         launchGrace: TimeInterval = defaultLaunchGrace,
-        processSessionIDs: ProcessSessionLookup = { _ in [] },
     ) -> WorkBatchBindingReconciliationResult {
         var updatedState = state
         var updatedBindings: [WorkBatchCockpitBinding] = []
@@ -44,28 +51,38 @@ enum WorkBatchBindingReconciler {
             let runtimeOtherSessionIDs = liveSessionsInWorktree
                 .map(\.sessionId)
                 .filter { $0 != binding.claudeSessionID }
-            let processSessionIDs = processSessionIDs(binding)
-            let processExactCount = processSessionIDs.count(where: { $0 == binding.claudeSessionID })
-            let processOtherSessionIDs = processSessionIDs.filter { $0 != binding.claudeSessionID }
-            let otherSessionIDs = Set(runtimeOtherSessionIDs + processOtherSessionIDs).sorted()
-            let hasDuplicateExactProcess = processExactCount > 1
-            let hasDuplicateCockpit = !otherSessionIDs.isEmpty || hasDuplicateExactProcess
+            // OS-liveness facts (DISTINCT from event-decay `isAlive`) supplied by
+            // the hud-hook sweep on each `RuntimeSession`. These replaced the
+            // former `/bin/ps` + `/usr/sbin/lsof` process scan: process-backed
+            // liveness of the exact assigned cockpit is `osProcessAlive == true`
+            // even when transcript signals decayed.
+            //
+            // Same-session OS-process duplicate detection was RETIRED in C5: the
+            // runtime keys sessions by id with one PID each, so a same-session
+            // duplicate can never be derived from snapshot facts. Only FOREIGN
+            // session ids in the worktree mark an ambiguous duplicate cockpit.
+            let exactProcessSessions = sessions.filter { session in
+                session.sessionId == binding.claudeSessionID &&
+                    sessionIsInsideBatchWorktree(session, worktreePath: binding.worktreePath)
+            }
+            let hasProcessBackedExactCockpit = exactProcessSessions
+                .contains { $0.osProcessAlive == true }
+            let otherSessionIDs = Set(runtimeOtherSessionIDs).sorted()
+            let hasDuplicateCockpit = !otherSessionIDs.isEmpty
             let exactCockpitActivity = exactCockpitActivity(
                 exactSessions: exactSessions,
-                processExactCount: processExactCount,
+                hasProcessBackedExactCockpit: hasProcessBackedExactCockpit,
             )
             let hasExactSession = exactCockpitActivity != .absent
             let needsUser = batchNeedsUser(binding.batchID, in: updatedState)
 
             func recordDuplicateIssue() {
+                var sessionIDs = Set(otherSessionIDs)
+                sessionIDs.insert(binding.claudeSessionID)
                 issues.append(WorkBatchBindingReconciliationIssue(
                     kind: .duplicateCockpit,
                     batchID: binding.batchID,
-                    sessionIDs: duplicateIssueSessionIDs(
-                        bindingSessionID: binding.claudeSessionID,
-                        otherSessionIDs: otherSessionIDs,
-                        hasDuplicateExactProcess: hasDuplicateExactProcess,
-                    ),
+                    sessionIDs: sessionIDs.sorted(),
                     message: "Multiple Claude Code sessions are active in the Batch Worktree.",
                 ))
             }
@@ -123,9 +140,10 @@ enum WorkBatchBindingReconciler {
                     binding.batchID,
                     in: &updatedState,
                     status: .waiting,
-                    attentionReason: .duplicateCockpit(
-                        assignedProcessDuplicate: hasDuplicateExactProcess && otherSessionIDs.isEmpty,
-                    ),
+                    // Same-session process duplicates were RETIRED in C5, so a
+                    // duplicateCockpit can now only be a FOREIGN-session
+                    // duplicate (ambiguous).
+                    attentionReason: .duplicateCockpit,
                     queueUnfinishedTasks: true,
                     now: now,
                 )
@@ -208,12 +226,12 @@ enum WorkBatchBindingReconciler {
 
     private static func exactCockpitActivity(
         exactSessions: [RuntimeSession],
-        processExactCount: Int,
+        hasProcessBackedExactCockpit: Bool,
     ) -> ExactCockpitActivity {
         if exactSessions.contains(where: sessionIsActivelyWorking) {
             return .working
         }
-        if !exactSessions.isEmpty || processExactCount > 0 {
+        if !exactSessions.isEmpty || hasProcessBackedExactCockpit {
             return .readyForInput
         }
         return .absent
@@ -230,19 +248,6 @@ enum WorkBatchBindingReconciler {
         case .ready, .idle:
             return false
         }
-    }
-
-    private static func duplicateIssueSessionIDs(
-        bindingSessionID: String,
-        otherSessionIDs: [String],
-        hasDuplicateExactProcess: Bool,
-    ) -> [String] {
-        var sessionIDs = Set(otherSessionIDs)
-        sessionIDs.insert(bindingSessionID)
-        if hasDuplicateExactProcess {
-            sessionIDs.insert("\(bindingSessionID) (duplicate process)")
-        }
-        return sessionIDs.sorted()
     }
 
     private static func shouldRemainLaunching(

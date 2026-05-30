@@ -212,6 +212,7 @@ struct CreationCard: View {
             let adHocProject = Project(
                 name: projectName,
                 path: creation.path,
+                workspaceId: WorkspaceIdentity.fromPath(creation.path),
                 displayPath: creation.path,
                 lastActive: nil,
                 claudeMdPath: nil,

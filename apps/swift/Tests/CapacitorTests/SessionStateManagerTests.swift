@@ -218,16 +218,23 @@ final class SessionStateManagerTests: XCTestCase {
         XCTAssertNil(manager.getSessionState(for: project)?.stateSource)
     }
 
-    func testLiveClaudeProcessEvidenceProjectsIdleRuntimeStateAsReady() {
+    func testOsProcessAliveProjectsIdleRuntimeStateAsReady() {
         let manager = makeManager()
         let project = makeProject("core-project", path: "/tmp/core-project")
 
+        // The matched runtime session carries `osProcessAlive == true` from the
+        // OS-liveness sweep (DISTINCT from event-decay `isAlive`), so the
+        // quiet-but-live cockpit stays Ready instead of dropping to idle.
         manager.applyRuntimeProjectStates(
             [makeRuntimeProjectState(projectPath: project.path, state: "idle", sessionId: "session-1")],
-            liveClaudeProcessesByProjectPath: [
-                project.path: LiveClaudeProjectProcessEvidence(
-                    processCount: 1,
-                    sessionIDs: ["session-1"],
+            sessions: [
+                makeRuntimeSession(
+                    sessionId: "session-1",
+                    pid: 1234,
+                    state: "idle",
+                    cwd: project.path,
+                    projectPath: project.path,
+                    osProcessAlive: true,
                 ),
             ],
             for: [project],
@@ -240,16 +247,23 @@ final class SessionStateManagerTests: XCTestCase {
         XCTAssertEqual(manager.getPreferredSessionId(for: project), "session-1")
     }
 
-    func testLiveClaudeProcessEvidenceCreatesSyntheticReadyStateForManualSession() {
+    func testOsProcessAliveCreatesSyntheticReadyStateForManualSession() {
         let manager = makeManager()
         let project = makeProject("manual-project", path: "/tmp/manual-project")
 
+        // No durable runtime project state yet, but the OS-liveness sweep
+        // attributes a live process to a session sitting inside the project. The
+        // manual-cockpit fallback projects it Ready without inventing Rust state.
         manager.applyRuntimeProjectStates(
             [],
-            liveClaudeProcessesByProjectPath: [
-                project.path: LiveClaudeProjectProcessEvidence(
-                    processCount: 1,
-                    sessionIDs: [],
+            sessions: [
+                makeRuntimeSession(
+                    sessionId: "manual-session",
+                    pid: 4242,
+                    state: "working",
+                    cwd: project.path,
+                    projectPath: project.path,
+                    osProcessAlive: true,
                 ),
             ],
             for: [project],
@@ -259,7 +273,57 @@ final class SessionStateManagerTests: XCTestCase {
         let projected = manager.getSessionState(for: project)
         XCTAssertEqual(projected?.state, .ready)
         XCTAssertTrue(projected?.hasSession == true)
-        XCTAssertNil(projected?.sessionId)
+        XCTAssertEqual(projected?.sessionId, "manual-session")
+    }
+
+    func testIdleRuntimeStateStaysIdleWhenOsProcessNotAlive() {
+        let manager = makeManager()
+        let project = makeProject("core-project", path: "/tmp/core-project")
+
+        // CONSUMER-B boundary: idle runtime + `osProcessAlive == false`/nil must
+        // NOT promote to Ready. Only a proven-live OS process keeps a quiet
+        // cockpit visible.
+        manager.applyRuntimeProjectStates(
+            [makeRuntimeProjectState(projectPath: project.path, state: "idle", sessionId: "session-1")],
+            sessions: [
+                makeRuntimeSession(
+                    sessionId: "session-1",
+                    pid: 1234,
+                    state: "idle",
+                    cwd: project.path,
+                    projectPath: project.path,
+                    osProcessAlive: false,
+                ),
+            ],
+            for: [project],
+            correlationId: "projection-idle-not-alive",
+        )
+
+        XCTAssertEqual(manager.getSessionState(for: project)?.state, .idle)
+    }
+
+    func testIdleRuntimeStateStaysIdleWhenOsProcessNotYetProbed() {
+        let manager = makeManager()
+        let project = makeProject("core-project", path: "/tmp/core-project")
+
+        // `osProcessAlive == nil` means NOT-YET-PROBED and is treated as unknown,
+        // never as proof of a live process, so idle stays idle.
+        manager.applyRuntimeProjectStates(
+            [makeRuntimeProjectState(projectPath: project.path, state: "idle", sessionId: "session-1")],
+            sessions: [
+                makeRuntimeSession(
+                    sessionId: "session-1",
+                    pid: 1234,
+                    state: "idle",
+                    cwd: project.path,
+                    projectPath: project.path,
+                ),
+            ],
+            for: [project],
+            correlationId: "projection-idle-not-probed",
+        )
+
+        XCTAssertEqual(manager.getSessionState(for: project)?.state, .idle)
     }
 
     func testProjectionPreservesLastAuthoritativeEventAt() {
@@ -789,17 +853,20 @@ final class SessionStateManagerTests: XCTestCase {
         sessionId: String,
         pid: UInt32,
         state: String,
+        cwd: String = "/tmp",
+        projectPath: String = "/tmp",
         stateSource: RuntimeStateSource? = nil,
         lastAuthoritativeEventAt: String? = nil,
+        osProcessAlive: Bool? = nil,
     ) -> RuntimeSession {
         RuntimeSession(
             sessionId: sessionId,
             pid: pid,
             state: try! SessionState.decode(wire: state),
-            cwd: "/tmp",
+            cwd: cwd,
             projectId: nil,
             workspaceId: nil,
-            projectPath: "/tmp",
+            projectPath: projectPath,
             updatedAt: fixtureStateTimestamp,
             stateChangedAt: fixtureStateTimestamp,
             lastEvent: nil,
@@ -809,6 +876,7 @@ final class SessionStateManagerTests: XCTestCase {
             lastAuthoritativeEventAt: lastAuthoritativeEventAt,
             gcReason: nil,
             isAlive: nil,
+            osProcessAlive: osProcessAlive,
         )
     }
 
@@ -853,6 +921,7 @@ final class SessionStateManagerTests: XCTestCase {
         Project(
             name: name,
             path: path,
+            workspaceId: WorkspaceIdentity.fromPath(path),
             displayPath: path,
             lastActive: nil,
             claudeMdPath: nil,

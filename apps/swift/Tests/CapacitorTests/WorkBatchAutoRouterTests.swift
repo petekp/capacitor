@@ -314,6 +314,7 @@ final class WorkBatchAutoRouterTests: XCTestCase {
         let project = Project(
             name: "capacitor-operator-routing-fixture-20260526",
             path: harness.projectRoot.path,
+            workspaceId: WorkspaceIdentity.fromPath(harness.projectRoot.path),
             displayPath: harness.projectRoot.path,
             lastActive: nil,
             claudeMdPath: nil,
@@ -707,13 +708,24 @@ final class WorkBatchAutoRouterTests: XCTestCase {
                 },
                 bindingStoreFactory: { _ in harness.bindingStore },
             ),
-            processSessionIDs: { binding in
-                binding.batchID == "batch-mobile" ? ["assigned-session-existing"] : []
-            },
         )
         let issues = router.reconcileBindings(
             projects: [harness.project],
-            sessions: [],
+            sessions: [
+                // OS-liveness sweep proves the exact assigned cockpit's process
+                // is alive in the worktree, but it is NOT at a safe-wake boundary
+                // (working under signal_absence, not awaiting input), so delivery
+                // must stay queue-only.
+                harness.runtimeSession(
+                    sessionId: "assigned-session-existing",
+                    cwd: harness.mobileWorktreePath,
+                    state: "working",
+                    toolsInFlight: 0,
+                    gcReason: "signal_absence",
+                    isAlive: false,
+                    osProcessAlive: true,
+                ),
+            ],
             now: harness.now,
         )
 
@@ -775,16 +787,26 @@ final class WorkBatchAutoRouterTests: XCTestCase {
                 },
                 bindingStoreFactory: { _ in harness.bindingStore },
             ),
-            processSessionIDs: { binding in
-                binding.batchID == "batch-mobile" ? ["assigned-session-existing"] : []
-            },
             safeWakeBoundaryAllowsInput: { binding in
                 binding.batchID == "batch-mobile"
             },
         )
         let issues = router.reconcileBindings(
             projects: [harness.project],
-            sessions: [],
+            sessions: [
+                // OS-liveness sweep proves the exact assigned cockpit process is
+                // alive in the worktree; the injected safe-wake override allows
+                // the tiny task-refresh wake.
+                harness.runtimeSession(
+                    sessionId: "assigned-session-existing",
+                    cwd: harness.mobileWorktreePath,
+                    state: "working",
+                    toolsInFlight: 0,
+                    gcReason: "signal_absence",
+                    isAlive: false,
+                    osProcessAlive: true,
+                ),
+            ],
             now: harness.now,
         )
 
@@ -853,7 +875,6 @@ final class WorkBatchAutoRouterTests: XCTestCase {
                 },
                 bindingStoreFactory: { _ in harness.bindingStore },
             ),
-            processSessionIDs: { _ in [] },
         )
         let issues = router.reconcileBindings(
             projects: [harness.project],
@@ -1010,9 +1031,6 @@ final class WorkBatchAutoRouterTests: XCTestCase {
                 },
                 bindingStoreFactory: { _ in harness.bindingStore },
             ),
-            processSessionIDs: { binding in
-                binding.claudeSessionID == "assigned-session-existing" ? ["assigned-session-existing"] : []
-            },
         )
         let issues = router.reconcileBindings(
             projects: [harness.project],
@@ -1029,6 +1047,7 @@ final class WorkBatchAutoRouterTests: XCTestCase {
                     ),
                     gcReason: "signal_absence",
                     isAlive: false,
+                    osProcessAlive: true,
                 ),
             ],
             now: harness.now,
@@ -1095,9 +1114,6 @@ final class WorkBatchAutoRouterTests: XCTestCase {
                 },
                 bindingStoreFactory: { _ in harness.bindingStore },
             ),
-            processSessionIDs: { binding in
-                binding.claudeSessionID == "assigned-session-existing" ? ["assigned-session-existing"] : []
-            },
         )
         let issues = router.reconcileBindings(
             projects: [harness.project],
@@ -1110,6 +1126,7 @@ final class WorkBatchAutoRouterTests: XCTestCase {
                     stateSource: nil,
                     gcReason: "signal_absence",
                     isAlive: false,
+                    osProcessAlive: true,
                 ),
             ],
             now: harness.now,
@@ -1170,9 +1187,6 @@ final class WorkBatchAutoRouterTests: XCTestCase {
                 },
                 bindingStoreFactory: { _ in harness.bindingStore },
             ),
-            processSessionIDs: { binding in
-                binding.claudeSessionID == "assigned-session-existing" ? ["assigned-session-existing"] : []
-            },
         )
         let issues = router.reconcileBindings(
             projects: [harness.project],
@@ -1189,6 +1203,7 @@ final class WorkBatchAutoRouterTests: XCTestCase {
                     ),
                     gcReason: "signal_absence",
                     isAlive: false,
+                    osProcessAlive: true,
                 ),
             ],
             now: harness.now,
@@ -1252,7 +1267,6 @@ final class WorkBatchAutoRouterTests: XCTestCase {
                 },
                 bindingStoreFactory: { _ in harness.bindingStore },
             ),
-            processSessionIDs: { _ in [] },
         )
         let issues = router.reconcileBindings(
             projects: [harness.project],
@@ -1322,7 +1336,6 @@ final class WorkBatchAutoRouterTests: XCTestCase {
                 },
                 bindingStoreFactory: { _ in harness.bindingStore },
             ),
-            processSessionIDs: { _ in [] },
         )
         _ = router.reconcileBindings(
             projects: [harness.project],
@@ -1392,9 +1405,24 @@ final class WorkBatchAutoRouterTests: XCTestCase {
                 },
                 bindingStoreFactory: { _ in harness.bindingStore },
             ),
-            processSessionIDs: { binding in
-                binding.batchID == "batch-mobile" ? ["assigned-session-existing"] : []
-            },
+        )
+        _ = router.reconcileBindings(
+            projects: [harness.project],
+            sessions: [
+                // OS-liveness sweep proves the exact assigned cockpit process is
+                // alive in the worktree, so delivery can reach the pickup-timeout
+                // branch after a prior wake went unclaimed.
+                harness.runtimeSession(
+                    sessionId: "assigned-session-existing",
+                    cwd: harness.mobileWorktreePath,
+                    state: "working",
+                    toolsInFlight: 0,
+                    gcReason: "signal_absence",
+                    isAlive: false,
+                    osProcessAlive: true,
+                ),
+            ],
+            now: harness.now,
         )
 
         _ = try await router.followThroughWorkBatchDelivery(
@@ -1420,11 +1448,15 @@ final class WorkBatchAutoRouterTests: XCTestCase {
             WorkBatchDeliveryAction.wakeExistingSession.rawValue,
         )
 
+        // Re-deliver at the SAME instant: a repeated follow-through must not
+        // repeat the wake nor churn durable state (the now-unified internal
+        // reconcile sees the same process-backed cockpit + same clock, so the
+        // pickup-timeout state is reproduced byte-for-byte).
         _ = try await router.followThroughWorkBatchDelivery(
             project: harness.project,
             batchID: "batch-mobile",
             preferredTaskID: "idea-old",
-            now: harness.now.addingTimeInterval(WorkBatchDeliveryPolicy.pickupClaimTimeout + 2),
+            now: harness.now.addingTimeInterval(WorkBatchDeliveryPolicy.pickupClaimTimeout + 1),
         )
         XCTAssertEqual(try harness.stateStore.load(), state)
     }
@@ -2237,12 +2269,16 @@ final class WorkBatchAutoRouterTests: XCTestCase {
         XCTAssertTrue(scripts.isEmpty)
         let state = try harness.stateStore.load()
         XCTAssertEqual(state.batches.first?.status, .waiting)
-        XCTAssertEqual(state.batches.first?.attentionReason, .duplicateCockpit(assignedProcessDuplicate: false))
+        XCTAssertEqual(state.batches.first?.attentionReason, .duplicateCockpit)
         XCTAssertEqual(try harness.derivedSummary(batchID: "batch-mobile"), "Multiple Claude Code sessions match this Work Batch.")
         XCTAssertEqual(state.tasks.first(where: { $0.id == "idea-green" })?.status, .queued)
     }
 
-    func testDuplicateAssignedSessionProcessKeepsUserFacingSummaryActionable() async throws {
+    /// C5 RETIREMENT LOCK: same-session OS-process duplicate detection is gone.
+    /// A single assigned, process-alive session in the worktree (no foreign
+    /// session ids, no count signal) is just the live cockpit — routing a
+    /// related task must NOT flag a duplicateCockpit and must NOT block re-entry.
+    func testSingleAssignedSessionProcessIsNotTreatedAsDuplicate() async throws {
         let harness = try RouterHarness()
         try harness.seedMobileBatch(status: .working, bindingStatus: .running)
         let terminalRecorder = TerminalScriptRecorder()
@@ -2268,11 +2304,23 @@ final class WorkBatchAutoRouterTests: XCTestCase {
                 },
                 bindingStoreFactory: { _ in harness.bindingStore },
             ),
-            processSessionIDs: { _ in ["assigned-session-existing", "assigned-session-existing"] },
         )
         router.reconcileBindings(
             projects: [harness.project],
-            sessions: [],
+            sessions: [
+                // The OS-liveness sweep reports the single assigned session as
+                // process-alive even after its event signals decayed. With
+                // same-session duplicate detection RETIRED in C5, this is just
+                // the live cockpit — not a duplicate.
+                harness.runtimeSession(
+                    sessionId: "assigned-session-existing",
+                    cwd: harness.mobileWorktreePath,
+                    state: "working",
+                    gcReason: "signal_absence",
+                    isAlive: false,
+                    osProcessAlive: true,
+                ),
+            ],
             now: harness.now,
         )
 
@@ -2286,10 +2334,15 @@ final class WorkBatchAutoRouterTests: XCTestCase {
         let scripts = await terminalRecorder.snapshot()
         XCTAssertTrue(scripts.isEmpty)
         let state = try harness.stateStore.load()
-        XCTAssertEqual(state.batches.first?.status, .waiting)
-        XCTAssertEqual(state.batches.first?.attentionReason, .duplicateCockpit(assignedProcessDuplicate: true))
-        XCTAssertEqual(try harness.derivedSummary(batchID: "batch-mobile"), "Claude Code is already open; click to re-enter.")
-        XCTAssertEqual(state.tasks.first(where: { $0.id == "idea-green" })?.status, .queued)
+        // Not a duplicate cockpit: the batch must not be parked in the
+        // duplicate-cockpit waiting state, and must not surface the duplicate
+        // summary. (Queuing the related task behind the live running cockpit is
+        // normal delivery policy and is NOT a duplicate signal.)
+        XCTAssertNotEqual(state.batches.first?.attentionReason, .duplicateCockpit)
+        XCTAssertNotEqual(
+            try harness.derivedSummary(batchID: "batch-mobile"),
+            "Multiple Claude Code sessions match this Work Batch.",
+        )
     }
 
     func testPendingCheckpointPreventsResumeAfterNewRelatedTask() async throws {
@@ -2440,7 +2493,11 @@ final class WorkBatchAutoRouterTests: XCTestCase {
         XCTAssertEqual(state.tasks.first?.status, .done)
     }
 
-    func testOpenCockpitFocusesAssignedSessionWhenOnlyDuplicateProcessMatches() async throws {
+    // C5: a single assigned, process-alive session (osProcessAlive == true) is
+    // the live cockpit; openCockpit focuses the existing terminal rather than
+    // resuming. (Same-session OS-process duplicate detection was RETIRED, so
+    // there is no longer a separate "only a duplicate process matches" path.)
+    func testOpenCockpitFocusesAssignedSessionWhenProcessAlive() async throws {
         let harness = try RouterHarness()
         try harness.seedMobileBatch(status: .waiting, bindingStatus: .waiting)
         let binding = try XCTUnwrap(harness.bindingStore.binding(batchID: "batch-mobile"))
@@ -2461,11 +2518,19 @@ final class WorkBatchAutoRouterTests: XCTestCase {
                 },
                 bindingStoreFactory: { _ in harness.bindingStore },
             ),
-            processSessionIDs: { _ in ["assigned-session-existing", "assigned-session-existing"] },
         )
         router.reconcileBindings(
             projects: [harness.project],
-            sessions: [],
+            sessions: [
+                harness.runtimeSession(
+                    sessionId: "assigned-session-existing",
+                    cwd: harness.mobileWorktreePath,
+                    state: "working",
+                    gcReason: "signal_absence",
+                    isAlive: false,
+                    osProcessAlive: true,
+                ),
+            ],
             now: harness.now,
         )
 
@@ -2480,7 +2545,13 @@ final class WorkBatchAutoRouterTests: XCTestCase {
         XCTAssertTrue(scripts.isEmpty)
     }
 
-    func testOpenCockpitDoesNotResumeWhenDuplicateAssignedProcessCannotBeFocused() async throws {
+    // C5: a process-alive assigned cockpit reconciles to a .running binding,
+    // so openCockpit focuses without resuming and, when focus fails, bails
+    // rather than spawning a second process. (Same-session OS-process duplicate
+    // detection was RETIRED, but this no-duplicate-spawn outcome is unchanged:
+    // it follows from the running binding being non-resumable, not from the
+    // deleted same-session signal.)
+    func testOpenCockpitDoesNotResumeRunningCockpitWhenFocusFails() async throws {
         let harness = try RouterHarness()
         try harness.seedMobileBatch(status: .waiting, bindingStatus: .waiting)
         let binding = try XCTUnwrap(harness.bindingStore.binding(batchID: "batch-mobile"))
@@ -2501,17 +2572,25 @@ final class WorkBatchAutoRouterTests: XCTestCase {
                 },
                 bindingStoreFactory: { _ in harness.bindingStore },
             ),
-            processSessionIDs: { _ in ["assigned-session-existing", "assigned-session-existing"] },
         )
         router.reconcileBindings(
             projects: [harness.project],
-            sessions: [],
+            sessions: [
+                harness.runtimeSession(
+                    sessionId: "assigned-session-existing",
+                    cwd: harness.mobileWorktreePath,
+                    state: "working",
+                    gcReason: "signal_absence",
+                    isAlive: false,
+                    osProcessAlive: true,
+                ),
+            ],
             now: harness.now,
         )
 
         do {
             _ = try await router.openCockpit(binding: binding)
-            XCTFail("Expected focus failure to stop before spawning another duplicate process")
+            XCTFail("Expected focus failure to stop before spawning a second process")
         } catch let error as WorkBatchTaskSessionError {
             XCTAssertEqual(error, .existingSessionFocusFailed)
         }
@@ -2544,7 +2623,23 @@ final class WorkBatchAutoRouterTests: XCTestCase {
                 },
                 bindingStoreFactory: { _ in harness.bindingStore },
             ),
-            processSessionIDs: { _ in ["assigned-session-existing"] },
+        )
+        router.reconcileBindings(
+            projects: [harness.project],
+            sessions: [
+                // OS-liveness sweep proves the assigned Claude process is alive in
+                // the stale binding's worktree, so openCockpit prefers focusing
+                // the visible cockpit before any resume.
+                harness.runtimeSession(
+                    sessionId: "assigned-session-existing",
+                    cwd: harness.mobileWorktreePath,
+                    state: "working",
+                    gcReason: "signal_absence",
+                    isAlive: false,
+                    osProcessAlive: true,
+                ),
+            ],
+            now: harness.now,
         )
 
         let request = try await router.openCockpit(binding: binding)
@@ -2579,7 +2674,6 @@ final class WorkBatchAutoRouterTests: XCTestCase {
                 },
                 bindingStoreFactory: { _ in harness.bindingStore },
             ),
-            processSessionIDs: { _ in [] },
         )
 
         let request = try await router.openCockpit(binding: binding)
@@ -3208,6 +3302,7 @@ private final class RouterHarness {
         Project(
             name: "Arc Design Studio",
             path: projectRoot.path,
+            workspaceId: WorkspaceIdentity.fromPath(projectRoot.path),
             displayPath: projectRoot.path,
             lastActive: nil,
             claudeMdPath: nil,
@@ -3360,6 +3455,7 @@ private final class RouterHarness {
         stateSource: RuntimeStateSource? = nil,
         gcReason: String? = nil,
         isAlive: Bool? = true,
+        osProcessAlive: Bool? = nil,
     ) -> RuntimeSession {
         RuntimeSession(
             sessionId: sessionId,
@@ -3378,6 +3474,7 @@ private final class RouterHarness {
             lastAuthoritativeEventAt: nil,
             gcReason: gcReason,
             isAlive: isAlive,
+            osProcessAlive: osProcessAlive,
         )
     }
 }

@@ -14,19 +14,19 @@ mod common;
 
 use capacitor_core::domain::{
     CaptureStatus, CheckpointKind, CheckpointStatus, InvolvementLevel, MediaArtifact,
-    MediaArtifactType, MermaidSource, MutateRunCommand, RunMutationKind, RunState, RunStatus,
+    MediaArtifactType, MermaidSource, RunState, RunStatus,
 };
 use capacitor_core::CoreRuntime;
-use common::{active_checkpoint_id, mutate_run as mutate};
+use common::{active_checkpoint_id, mutate_run as mutate, RunCommandBuilder, RunMutationKind};
 use tempfile::TempDir;
 
 const PROJECT: &str = "/test/run-kernel-project";
 
-fn create_cmd(run_id: &str, method_id: &str) -> MutateRunCommand {
+fn create_cmd(run_id: &str, method_id: &str) -> RunCommandBuilder {
     common::run_kernel_create_cmd(PROJECT, run_id, method_id)
 }
 
-fn base_cmd(run_id: &str) -> MutateRunCommand {
+fn base_cmd(run_id: &str) -> RunCommandBuilder {
     common::run_kernel_base_cmd(PROJECT, run_id)
 }
 
@@ -40,7 +40,9 @@ fn scenario_execution_only_full_lifecycle() {
 
     // Create run with execution_only method
     let outcome = runtime
-        .mutate_run(create_cmd("run-exec-01", "execution_only"))
+        .mutate_run(
+            create_cmd("run-exec-01", "execution_only").into_command(RunMutationKind::Create),
+        )
         .expect("create");
     assert!(outcome.ok, "create failed: {}", outcome.message);
 
@@ -112,7 +114,9 @@ fn scenario_capture_checkpoint_lifecycle() {
     let runtime = CoreRuntime::new().expect("runtime");
 
     runtime
-        .mutate_run(create_cmd("run-capture-01", "execution_only"))
+        .mutate_run(
+            create_cmd("run-capture-01", "execution_only").into_command(RunMutationKind::Create),
+        )
         .expect("create");
 
     let snap = runtime.app_snapshot().expect("snapshot");
@@ -227,7 +231,9 @@ fn scenario_shape_and_execute_multi_phase() {
     let runtime = CoreRuntime::new().expect("runtime");
 
     runtime
-        .mutate_run(create_cmd("run-se-01", "shape_and_execute"))
+        .mutate_run(
+            create_cmd("run-se-01", "shape_and_execute").into_command(RunMutationKind::Create),
+        )
         .expect("create");
 
     // Attach → starts Shape phase
@@ -315,7 +321,7 @@ fn scenario_deep_debug_three_phase() {
     let runtime = CoreRuntime::new().expect("runtime");
 
     runtime
-        .mutate_run(create_cmd("run-debug-01", "deep_debug"))
+        .mutate_run(create_cmd("run-debug-01", "deep_debug").into_command(RunMutationKind::Create))
         .expect("create");
 
     let snap = runtime.app_snapshot().expect("snap");
@@ -380,7 +386,9 @@ fn scenario_greenfield_build_four_phases() {
     let runtime = CoreRuntime::new().expect("runtime");
 
     runtime
-        .mutate_run(create_cmd("run-gf-01", "greenfield_build"))
+        .mutate_run(
+            create_cmd("run-gf-01", "greenfield_build").into_command(RunMutationKind::Create),
+        )
         .expect("create");
 
     let snap = runtime.app_snapshot().expect("snap");
@@ -401,7 +409,9 @@ fn scenario_strangler_bridge_delegation_worker() {
 
     let mut cmd = create_cmd("run-bridge-01", "execution_only");
     cmd.delegation_worker_id = Some("worker-legacy-123".to_string());
-    let outcome = runtime.mutate_run(cmd).expect("create");
+    let outcome = runtime
+        .mutate_run(cmd.into_command(RunMutationKind::Create))
+        .expect("create");
     assert!(outcome.ok);
 
     let snap = runtime.app_snapshot().expect("snap");
@@ -432,10 +442,10 @@ fn scenario_concurrent_runs_same_project() {
     let runtime = CoreRuntime::new().expect("runtime");
 
     runtime
-        .mutate_run(create_cmd("run-a", "execution_only"))
+        .mutate_run(create_cmd("run-a", "execution_only").into_command(RunMutationKind::Create))
         .expect("create run-a");
     runtime
-        .mutate_run(create_cmd("run-b", "shape_and_execute"))
+        .mutate_run(create_cmd("run-b", "shape_and_execute").into_command(RunMutationKind::Create))
         .expect("create run-b");
 
     let snap = runtime.app_snapshot().expect("snap");
@@ -463,7 +473,9 @@ fn scenario_involvement_level_override() {
 
     // Default involvement for execution_only is Supervised
     let outcome = runtime
-        .mutate_run(create_cmd("run-default", "execution_only"))
+        .mutate_run(
+            create_cmd("run-default", "execution_only").into_command(RunMutationKind::Create),
+        )
         .expect("create");
     assert!(outcome.ok);
 
@@ -474,7 +486,9 @@ fn scenario_involvement_level_override() {
     // Override to Autonomous
     let mut cmd = create_cmd("run-auto", "execution_only");
     cmd.involvement = Some(InvolvementLevel::Autonomous);
-    runtime.mutate_run(cmd).expect("create");
+    runtime
+        .mutate_run(cmd.into_command(RunMutationKind::Create))
+        .expect("create");
 
     let snap = runtime.app_snapshot().expect("snap");
     let auto_run = snap.runs.iter().find(|r| r.id == "run-auto").unwrap();
@@ -489,7 +503,9 @@ fn scenario_involvement_level_override() {
 fn scenario_error_invalid_method() {
     let runtime = CoreRuntime::new().expect("runtime");
     let outcome = runtime
-        .mutate_run(create_cmd("run-bad", "nonexistent_method"))
+        .mutate_run(
+            create_cmd("run-bad", "nonexistent_method").into_command(RunMutationKind::Create),
+        )
         .expect("outcome");
     assert!(!outcome.ok);
     assert!(outcome.message.contains("unknown method"));
@@ -499,7 +515,7 @@ fn scenario_error_invalid_method() {
 fn scenario_error_duplicate_checkpoint() {
     let runtime = CoreRuntime::new().expect("runtime");
     runtime
-        .mutate_run(create_cmd("run-dup", "execution_only"))
+        .mutate_run(create_cmd("run-dup", "execution_only").into_command(RunMutationKind::Create))
         .expect("create");
 
     let mut cmd = base_cmd("run-dup");
@@ -524,7 +540,9 @@ fn scenario_error_duplicate_checkpoint() {
 fn scenario_emit_checkpoint_preserves_caller_supplied_checkpoint_id() {
     let runtime = CoreRuntime::new().expect("runtime");
     runtime
-        .mutate_run(create_cmd("run-gate-id", "execution_only"))
+        .mutate_run(
+            create_cmd("run-gate-id", "execution_only").into_command(RunMutationKind::Create),
+        )
         .expect("create");
 
     let mut cmd = base_cmd("run-gate-id");
@@ -555,7 +573,9 @@ fn scenario_emit_checkpoint_preserves_caller_supplied_checkpoint_id() {
 fn scenario_reemitting_same_checkpoint_is_idempotent() {
     let runtime = CoreRuntime::new().expect("runtime");
     runtime
-        .mutate_run(create_cmd("run-gate-reemit", "execution_only"))
+        .mutate_run(
+            create_cmd("run-gate-reemit", "execution_only").into_command(RunMutationKind::Create),
+        )
         .expect("create");
 
     let mut cmd = base_cmd("run-gate-reemit");
@@ -610,7 +630,9 @@ fn scenario_reemitting_same_checkpoint_is_idempotent() {
 fn scenario_submit_decision_validates_checkpoint_id() {
     let runtime = CoreRuntime::new().expect("runtime");
     runtime
-        .mutate_run(create_cmd("run-gate-decision", "execution_only"))
+        .mutate_run(
+            create_cmd("run-gate-decision", "execution_only").into_command(RunMutationKind::Create),
+        )
         .expect("create");
 
     let mut cmd = base_cmd("run-gate-decision");
@@ -669,7 +691,10 @@ fn scenario_submit_decision_archives_decided_checkpoint_history() {
         .expect("runtime");
 
     runtime
-        .mutate_run(create_cmd("run-checkpoint-history", "execution_only"))
+        .mutate_run(
+            create_cmd("run-checkpoint-history", "execution_only")
+                .into_command(RunMutationKind::Create),
+        )
         .expect("create");
 
     let mut cmd = base_cmd("run-checkpoint-history");
@@ -740,7 +765,10 @@ fn scenario_approve_archives_full_checkpoint_payload() {
     let runtime = CoreRuntime::new().expect("runtime");
 
     runtime
-        .mutate_run(create_cmd("run-checkpoint-payload", "execution_only"))
+        .mutate_run(
+            create_cmd("run-checkpoint-payload", "execution_only")
+                .into_command(RunMutationKind::Create),
+        )
         .expect("create");
 
     let mut cmd = base_cmd("run-checkpoint-payload");
@@ -842,7 +870,10 @@ fn scenario_completed_run_preserves_checkpoint_history_after_restart() {
         .expect("runtime");
 
     runtime
-        .mutate_run(create_cmd("run-completed-history", "execution_only"))
+        .mutate_run(
+            create_cmd("run-completed-history", "execution_only")
+                .into_command(RunMutationKind::Create),
+        )
         .expect("create");
 
     let mut cmd = base_cmd("run-completed-history");
@@ -906,7 +937,10 @@ fn scenario_checkpoint_history_truncates_oldest_records_deterministically() {
     let runtime = CoreRuntime::new().expect("runtime");
 
     runtime
-        .mutate_run(create_cmd("run-checkpoint-retention", "execution_only"))
+        .mutate_run(
+            create_cmd("run-checkpoint-retention", "execution_only")
+                .into_command(RunMutationKind::Create),
+        )
         .expect("create");
 
     let mut cmd = base_cmd("run-checkpoint-retention");
@@ -968,7 +1002,9 @@ fn scenario_checkpoint_history_truncates_oldest_records_deterministically() {
 fn scenario_error_advance_with_active_checkpoint() {
     let runtime = CoreRuntime::new().expect("runtime");
     runtime
-        .mutate_run(create_cmd("run-block", "shape_and_execute"))
+        .mutate_run(
+            create_cmd("run-block", "shape_and_execute").into_command(RunMutationKind::Create),
+        )
         .expect("create");
 
     let mut cmd = base_cmd("run-block");
@@ -994,7 +1030,7 @@ fn scenario_error_advance_with_active_checkpoint() {
 fn scenario_error_decision_without_checkpoint() {
     let runtime = CoreRuntime::new().expect("runtime");
     runtime
-        .mutate_run(create_cmd("run-nocp", "execution_only"))
+        .mutate_run(create_cmd("run-nocp", "execution_only").into_command(RunMutationKind::Create))
         .expect("create");
 
     let mut cmd = base_cmd("run-nocp");
@@ -1022,7 +1058,9 @@ fn scenario_snapshot_recovery() {
         .expect("runtime");
 
     runtime
-        .mutate_run(create_cmd("run-persist", "shape_and_execute"))
+        .mutate_run(
+            create_cmd("run-persist", "shape_and_execute").into_command(RunMutationKind::Create),
+        )
         .expect("create");
 
     let mut cmd = base_cmd("run-persist");
@@ -1063,7 +1101,9 @@ fn scenario_idea_fields_survive_create_snapshot_roundtrip() {
     cmd.idea_id = Some("test-idea-1".to_string());
     cmd.idea_title = Some("Fix input width".to_string());
     cmd.idea_description = Some("The input field is too narrow on mobile".to_string());
-    let outcome = runtime.mutate_run(cmd).expect("create");
+    let outcome = runtime
+        .mutate_run(cmd.into_command(RunMutationKind::Create))
+        .expect("create");
     assert!(outcome.ok, "create failed: {}", outcome.message);
 
     let snap = runtime.app_snapshot().expect("snapshot");
@@ -1226,7 +1266,9 @@ fn scenario_idea_fields_default_to_none_when_omitted() {
     let runtime = CoreRuntime::new().expect("runtime");
 
     let outcome = runtime
-        .mutate_run(create_cmd("run-idea-none", "execution_only"))
+        .mutate_run(
+            create_cmd("run-idea-none", "execution_only").into_command(RunMutationKind::Create),
+        )
         .expect("create");
     assert!(outcome.ok, "create failed: {}", outcome.message);
 
@@ -1249,7 +1291,9 @@ fn scenario_idea_fields_default_to_none_when_omitted() {
 fn scenario_cancel_active_run() {
     let runtime = CoreRuntime::new().expect("runtime");
     runtime
-        .mutate_run(create_cmd("run-cancel", "execution_only"))
+        .mutate_run(
+            create_cmd("run-cancel", "execution_only").into_command(RunMutationKind::Create),
+        )
         .expect("create");
 
     let mut cmd = base_cmd("run-cancel");
@@ -1274,7 +1318,7 @@ fn scenario_cancel_active_run() {
 fn scenario_fail_run() {
     let runtime = CoreRuntime::new().expect("runtime");
     runtime
-        .mutate_run(create_cmd("run-fail", "execution_only"))
+        .mutate_run(create_cmd("run-fail", "execution_only").into_command(RunMutationKind::Create))
         .expect("create");
 
     let outcome = mutate(&runtime, base_cmd("run-fail"), RunMutationKind::Fail);
@@ -1314,7 +1358,9 @@ fn scenario_runs_and_delegations_coexist() {
 
     // Create a run
     runtime
-        .mutate_run(create_cmd("run-coexist", "execution_only"))
+        .mutate_run(
+            create_cmd("run-coexist", "execution_only").into_command(RunMutationKind::Create),
+        )
         .expect("create run");
 
     // Both appear in snapshot
@@ -1334,7 +1380,9 @@ fn scenario_capture_complete_rejects_empty_artifacts() {
     let runtime = CoreRuntime::new().expect("runtime");
 
     runtime
-        .mutate_run(create_cmd("run-empty-cap", "execution_only"))
+        .mutate_run(
+            create_cmd("run-empty-cap", "execution_only").into_command(RunMutationKind::Create),
+        )
         .expect("create");
 
     let mut cmd = base_cmd("run-empty-cap");

@@ -35,6 +35,7 @@ pub(crate) fn normalize_shell_signal(
         tmux_client_tty: normalize_optional_text(command.tmux_client_tty),
         tmux_pane: normalize_optional_text(command.tmux_pane),
         tmux_panes: normalize_tmux_panes(command.tmux_panes),
+        proc_start: command.proc_start,
         recorded_at: command.recorded_at.trim().to_string(),
     }
 }
@@ -139,6 +140,7 @@ mod tests {
                 session_attached: true,
             }],
             recorded_at: " 2026-02-28T00:00:00Z ".to_string(),
+            proc_start: None,
         });
 
         assert_eq!(normalized.cwd, "/repo");

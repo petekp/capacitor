@@ -238,6 +238,7 @@
             Project(
                 name: "capacitor",
                 path: "/Users/pete/Code/capacitor",
+                workspaceId: WorkspaceIdentity.fromPath("/Users/pete/Code/capacitor"),
                 displayPath: "~/Code/capacitor",
                 lastActive: nil,
                 claudeMdPath: nil,
