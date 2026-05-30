@@ -96,11 +96,21 @@ struct ProjectsView: View {
             scrollbarMaskWidth: maskScrollbarWidth,
         )
         let scrollbarInset = floatingMode ? WindowCornerRadius.value(floatingMode: floatingMode) : 0
+        let shouldShowConnectOnboarding = ProjectsEmptyStatePolicy.shouldShowConnectOnboarding(
+            isLoading: appState.uiState.isLoading,
+            projectsAreEmpty: appState.projectState.projects.isEmpty,
+            loadPhase: appState.uiState.projectsLoadPhase,
+        )
+        let shouldShowLoadFailure = ProjectsEmptyStatePolicy.shouldShowLoadFailure(
+            isLoading: appState.uiState.isLoading,
+            projectsAreEmpty: appState.projectState.projects.isEmpty,
+            loadPhase: appState.uiState.projectsLoadPhase,
+        )
 
         // Empty state: uses ScrollView with gradient mask for visual
         // consistency with the project list. Content flows naturally
         // (no .frame(maxHeight: .infinity) to avoid layout oscillation).
-        if !appState.uiState.isLoading, appState.projectState.projects.isEmpty {
+        if shouldShowConnectOnboarding || shouldShowLoadFailure {
             ScrollView {
                 VStack(spacing: 0) {
                     ProjectListDiagnosticsSection()
@@ -119,8 +129,13 @@ struct ProjectsView: View {
                         .padding(.horizontal, listHorizontalPadding)
                         .padding(.bottom, 4)
                     }
-                    EmptyProjectsView()
-                        .frame(maxWidth: .infinity)
+                    if shouldShowLoadFailure {
+                        ProjectsLoadFailureView()
+                            .frame(maxWidth: .infinity)
+                    } else {
+                        EmptyProjectsView()
+                            .frame(maxWidth: .infinity)
+                    }
                 }
                 .padding(.top, contentTopPadding)
                 .padding(.bottom, contentBottomPadding)
@@ -1187,6 +1202,77 @@ struct EmptyProjectsView: View {
         .onHover { hovering in
             withAnimation(.easeOut(duration: 0.1)) {
                 hoveredPath = hovering ? suggestion.path : nil
+            }
+        }
+    }
+}
+
+struct ProjectsLoadFailureView: View {
+    @Environment(AppState.self) var appState: AppState
+    @Environment(\.floatingMode) private var floatingMode
+    @Environment(\.prefersReducedMotion) private var reduceMotion
+
+    @State private var appeared = false
+    @State private var retryHovered = false
+
+    var body: some View {
+        VStack(spacing: OnboardingStyle.headerToContentSpacing) {
+            VStack(spacing: OnboardingStyle.logoToHeadingSpacing) {
+                BrandLogomark(size: OnboardingStyle.logomarkSize)
+
+                Text("Couldn't load your projects")
+                    .font(AppTypography.onboardingHeading)
+                    .foregroundColor(OnboardingStyle.headingColor)
+                    .multilineTextAlignment(.center)
+
+                Text("Something went wrong reading your project list.")
+                    .font(AppTypography.onboardingSubtitle)
+                    .foregroundColor(OnboardingStyle.subtitleColor)
+                    .multilineTextAlignment(.center)
+            }
+
+            Button(action: { appState.loadDashboard() }) {
+                Text("Retry")
+                    .font(AppTypography.labelMedium.weight(.semibold))
+                    .foregroundColor(.white.opacity(retryHovered ? 0.9 : 0.65))
+                    .padding(.horizontal, 18)
+                    .padding(.vertical, 8)
+                    .background(
+                        Capsule()
+                            .fill(Color.white.opacity(retryHovered ? 0.12 : 0.06)),
+                    )
+                    .overlay(
+                        Capsule()
+                            .strokeBorder(Color.white.opacity(retryHovered ? 0.24 : 0.12), lineWidth: 0.5),
+                    )
+            }
+            .buttonStyle(.plain)
+            .scaleEffect(retryHovered && !reduceMotion ? 1.02 : 1.0)
+            .animation(reduceMotion ? AppMotion.reducedMotionFallback : .easeOut(duration: 0.15), value: retryHovered)
+            .onHover { hovering in
+                retryHovered = hovering
+            }
+        }
+        .padding(.top, 16)
+        .frame(maxWidth: .infinity)
+        .opacity(appeared || reduceMotion ? 1 : 0)
+        .offset(y: appeared || reduceMotion ? 0 : 8)
+        .background {
+            if floatingMode {
+                Color.clear
+                    .contentShape(Rectangle())
+                    .windowDraggable()
+            }
+        }
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("Project list failed to load")
+        .onAppear {
+            if !reduceMotion {
+                withAnimation(.spring(response: 0.6, dampingFraction: 0.8)) {
+                    appeared = true
+                }
+            } else {
+                appeared = true
             }
         }
     }

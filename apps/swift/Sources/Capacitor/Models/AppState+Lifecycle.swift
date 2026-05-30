@@ -152,6 +152,7 @@ extension AppState {
         do {
             uiState.dashboard = try engine.loadDashboard()
             projectState.projects = uiState.dashboard?.projects ?? []
+            uiState.projectsLoadPhase = .loaded
             if projectState.projects.isEmpty, projectState.suggestedProjects.isEmpty {
                 refreshSuggestedProjects()
             } else if !projectState.projects.isEmpty, !projectState.suggestedProjects.isEmpty {
@@ -168,6 +169,8 @@ extension AppState {
                 uiState.isLoading = false
             }
         } catch {
+            DebugLog.write("AppState.loadDashboard failed error=\(error.localizedDescription)")
+            uiState.projectsLoadPhase = .failed
             uiState.error = error.localizedDescription
             if showLoadingState {
                 uiState.isLoading = false

@@ -54,7 +54,11 @@ struct ContentView: View {
                     .zIndex(100)
                 }
 
-                if !uiState.isLoading, appState.projectState.projects.isEmpty, !isDragHovered, !uiState.isFileDragOverCard {
+                if ProjectsEmptyStatePolicy.shouldShowConnectOnboarding(
+                    isLoading: uiState.isLoading,
+                    projectsAreEmpty: appState.projectState.projects.isEmpty,
+                    loadPhase: uiState.projectsLoadPhase,
+                ), !isDragHovered, !uiState.isFileDragOverCard {
                     EmptyStateBorderGlow()
                         .transition(.opacity)
                 }

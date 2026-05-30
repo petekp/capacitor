@@ -24,7 +24,11 @@ struct FooterView: View {
         if !appState.projectState.selectedSuggestedPaths.isEmpty {
             return .connectCTA
         }
-        if !appState.uiState.isLoading, appState.projectState.projects.isEmpty {
+        if ProjectsEmptyStatePolicy.shouldShowConnectOnboarding(
+            isLoading: appState.uiState.isLoading,
+            projectsAreEmpty: appState.projectState.projects.isEmpty,
+            loadPhase: appState.uiState.projectsLoadPhase,
+        ) {
             return .browse
         }
         return .normal
