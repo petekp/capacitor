@@ -7,6 +7,12 @@ enum LayoutMode: String, CaseIterable {
     case dock
 }
 
+enum ProjectsLoadPhase: Equatable {
+    case initial
+    case loaded
+    case failed
+}
+
 enum ProjectView: Equatable {
     case list
     case detail(Project)
@@ -70,6 +76,7 @@ final class UIState {
 
     var dashboard: DashboardData?
     var isLoading = true
+    var projectsLoadPhase: ProjectsLoadPhase = .initial
     var error: String?
     var toast: ToastMessage?
     var pendingDragDropTip = false
