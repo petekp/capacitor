@@ -10,11 +10,6 @@ on:
   pull_request:
     branches: [main]
   workflow_dispatch:
-  schedule:
-    # Nightly extended pass (09:00 UTC): runs the user-facing / release-time
-    # gates (AX GUI lane, release-smoke build, release-script bats) that are
-    # gated off the per-PR path. Per-PR keeps only the agent-drift guardrails.
-    - cron: "0 9 * * *"
 
 permissions:
   contents: read
@@ -98,9 +93,9 @@ jobs:
 
       # Extended (non-per-PR) gate: release-script bats cover release/AX
       # machinery (bump-version, generate-appcast, ax-automation-verify). Gated
-      # to nightly / manual dispatch / v* tags; skipped on ordinary PRs.
+      # to manual dispatch / v* tags; skipped on ordinary PRs.
       - name: Run release script tests
-        if: ${{ github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/v') }}
+        if: ${{ github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/v') }}
         run: bats tests/release-scripts
 
   test-rust:
@@ -212,13 +207,13 @@ jobs:
     runs-on: macos-15
     needs: test-surface-audit
     # Extended (non-per-PR) gate: the AX GUI lane is user-facing/release-time work
-    # and is inherently flaky (UI automation). It only runs nightly, on manual
-    # dispatch, or on v* tags — never on ordinary PRs/branch pushes. Still
-    # advisory (continue-on-error) when it does run. Split out of the Runtime
-    # Reliability Gate so a flaky AX run can no longer shadow the deterministic
+    # and is inherently flaky (UI automation). It only runs on manual dispatch or
+    # on v* tags — never on ordinary PRs/branch pushes. Still advisory
+    # (continue-on-error) when it does run. Split out of the Runtime Reliability
+    # Gate so a flaky AX run can no longer shadow the deterministic
     # projection-parity gate under `set -e`. Builds its own release artifacts via
     # prepare_ax_verifier_build.
-    if: ${{ github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/v') }}
+    if: ${{ github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/v') }}
     continue-on-error: true
     timeout-minutes: 20
     steps:
@@ -280,19 +275,33 @@ jobs:
         env:
           SWIFTFORMAT_VERSION: "0.61.1"
         run: |
-          curl -sL "https://github.com/nicklockwood/SwiftFormat/releases/download/${SWIFTFORMAT_VERSION}/swiftformat.zip" -o /tmp/swiftformat.zip
-          unzip -o /tmp/swiftformat.zip -d /usr/local/bin/
-          chmod +x /usr/local/bin/swiftformat
-          # Drift-proof: fail fast if the downloaded asset is not the pinned
-          # version (GitHub has previously re-pointed release URLs to a newer
-          # build). Without this assertion CI could silently lint with the wrong
-          # SwiftFormat version, masking or introducing formatting drift.
-          INSTALLED_VERSION="$(swiftformat --version)"
-          echo "swiftformat reported version: ${INSTALLED_VERSION}"
+          # Install into a dedicated dir and reference the binary by ABSOLUTE
+          # PATH from here on. The runner image ships its own SwiftFormat in
+          # /opt/homebrew/bin, which precedes /usr/local/bin in PATH, so a bare
+          # `swiftformat` call resolves to the image's build and silently ignores
+          # the one we just installed. That is what the assertion below kept
+          # tripping on: the reported version tracked the runner image's
+          # SwiftFormat, not our pin, so it moved every time the image did.
+          INSTALL_DIR="${RUNNER_TEMP}/swiftformat-${SWIFTFORMAT_VERSION}"
+          mkdir -p "${INSTALL_DIR}"
+          curl -sL "https://github.com/nicklockwood/SwiftFormat/releases/download/${SWIFTFORMAT_VERSION}/swiftformat.zip" -o "${RUNNER_TEMP}/swiftformat.zip"
+          unzip -oq "${RUNNER_TEMP}/swiftformat.zip" -d "${INSTALL_DIR}"
+          SWIFTFORMAT_BIN="${INSTALL_DIR}/swiftformat"
+          chmod +x "${SWIFTFORMAT_BIN}"
+
+          # Drift-proof: fail fast if the pinned asset does not report the pinned
+          # version. Asserting against the absolute path means this now checks
+          # the upstream asset itself rather than PATH resolution order.
+          INSTALLED_VERSION="$("${SWIFTFORMAT_BIN}" --version)"
+          echo "pinned swiftformat: ${SWIFTFORMAT_BIN} (reports ${INSTALLED_VERSION})"
+          echo "PATH swiftformat (unused): $(command -v swiftformat || echo none)"
           if [ "${INSTALLED_VERSION}" != "${SWIFTFORMAT_VERSION}" ]; then
             echo "ERROR: expected swiftformat ${SWIFTFORMAT_VERSION} but got ${INSTALLED_VERSION}" >&2
             exit 1
           fi
+
+          # Hand the pinned binary to the lint step below.
+          echo "SWIFTFORMAT_BIN=${SWIFTFORMAT_BIN}" >> "${GITHUB_ENV}"
 
       - name: SwiftFormat lint
         run: ./scripts/ci/swiftformat-lint.sh
@@ -320,11 +329,11 @@ jobs:
     needs: [test-rust, test-swift]
     # Extended (non-per-PR) gate: what remains here after relocating the UniFFI
     # drift guard to test-swift is release machinery (release Swift build,
-    # version-sync check, bump-version dry-run). It only runs nightly, on manual
-    # dispatch, or on v* tags. Skipped on ordinary PRs/branch pushes (no cost).
+    # version-sync check, bump-version dry-run). It only runs on manual dispatch
+    # or on v* tags. Skipped on ordinary PRs/branch pushes (no cost).
     # GitHub treats a skipped `needs:` as satisfied for downstream gated jobs,
     # and no per-PR job needs this one, so the skip is non-blocking.
-    if: ${{ github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/v') }}
+    if: ${{ github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/v') }}
     steps:
       - uses: actions/checkout@v6
 
